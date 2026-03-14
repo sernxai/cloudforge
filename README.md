@@ -1,4 +1,4 @@
-# ☁️ CloudForge — Infrastructure as Code em Python
+## ☁️ CloudForge — Infrastructure as Code em Python
 
 **CloudForge** é uma ferramenta de Infrastructure as Code (IaC) escrita em Python, inspirada no Terraform, que permite definir, provisionar e gerenciar recursos em múltiplos provedores de nuvem (AWS, GCP, Azure) usando arquivos YAML declarativos.
 
@@ -129,4 +129,4 @@ deploy:
 
 ## Licença
 
-MIT
+Apache 2.0
