@@ -31,6 +31,54 @@
 | firebase_hosting | Static Hosting / SPA | GCP |
 | dns_record | DNS Records (CNAME, A, TXT, MX) | GoDaddy |
 
+## CloudForge vs OpenTofu
+
+While OpenTofu uses HCL (HashiCorp Configuration Language), CloudForge uses simple, declarative YAML. This makes it easier to read and integrate with other CI/CD tools.
+
+### Example: Creating a VM/Instance
+
+**OpenTofu (HCL):**
+```hcl
+resource "aws_instance" "example" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t2.micro"
+}
+```
+
+**CloudForge (YAML):**
+```yaml
+- type: vm
+  name: example-instance
+  config:
+    instance_type: small
+    os: ubuntu-22.04
+```
+
+### Example: DNS Record
+
+**OpenTofu (HCL):**
+```hcl
+resource "cloudflare_record" "www" {
+  zone_id = "your-zone-id"
+  name    = "www"
+  value   = "192.0.2.1"
+  type    = "A"
+  ttl     = 3600
+}
+```
+
+**CloudForge (YAML):**
+```yaml
+- type: dns_record
+  name: www-record
+  config:
+    domain: example.com
+    type: A
+    name: www
+    value: 192.0.2.1
+    ttl: 3600
+```
+
 ## Installation
 
 ```bash
