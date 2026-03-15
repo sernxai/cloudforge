@@ -1,41 +1,45 @@
-# CloudForge — Infrastructure as Code em Python
+# CloudForge — Infrastructure as Code in Python
 
-**CloudForge** é uma ferramenta de Infrastructure as Code (IaC) escrita em Python, inspirada no Terraform, que permite definir, provisionar e gerenciar recursos em múltiplos provedores de nuvem usando arquivos YAML declarativos.
+[Português Brasileiro (pt-BR)](README-pt-br.md)
 
-## Funcionalidades
+**CloudForge** is an Infrastructure as Code (IaC) tool written in Python, inspired by Terraform, which allows you to define, provision, and manage resources across multiple cloud providers using declarative YAML files.
 
-- **Multi-cloud**: AWS, GCP e Azure com abstração unificada
-- **Firebase nativo**: Auth, Firestore, Realtime Database e Hosting
-- **Cloud Run**: Deploy serverless de containers no GCP
-- **DNS multi-provider**: GoDaddy (CNAME, A, TXT, MX) integrado
-- **Declarativo**: Infraestrutura inteira definida em YAML
-- **Estado gerenciado**: Controle local (JSON) com diff, backup e rollback
-- **Plan/Apply/Destroy**: Fluxo seguro com preview antes de aplicar
+## Features
 
-## Recursos Suportados
+- **Multi-cloud**: AWS, GCP, and Azure with unified abstraction
+- **Native Firebase**: Auth, Firestore, Realtime Database, and Hosting
+- **Cloud Run**: Serverless container deployment on GCP
+- **Multi-provider DNS**: Integrated GoDaddy (CNAME, A, TXT, MX)
+- **Declarative**: Entire infrastructure defined in YAML
+- **Managed State**: Local control (JSON) with diff, backup, and rollback
+- **Plan/Apply/Destroy**: Secure workflow with preview before applying
 
-| Tipo | Descrição | Providers |
+## Supported Resources
+
+| Type | Description | Providers |
 |---|---|---|
-| vm | Máquinas virtuais | AWS, GCP, Azure |
+| vm | Virtual Machines | AWS, GCP, Azure |
 | vpc | Virtual Private Cloud / VNet | AWS, GCP, Azure |
-| subnet | Sub-redes | AWS, GCP, Azure |
+| subnet | Subnets | AWS, GCP, Azure |
 | security_group | Firewall / NSG | AWS, GCP, Azure |
-| kubernetes | Clusters K8s (EKS/GKE/AKS) | AWS, GCP, Azure |
-| database | Bancos gerenciados (RDS/SQL/etc) | AWS, GCP, Azure |
-| cloud_run | Container serverless | GCP |
-| firebase_auth | Autenticação Firebase | GCP |
+| kubernetes | K8s Clusters (EKS/GKE/AKS) | AWS, GCP, Azure |
+| database | Managed Databases (RDS/SQL/etc) | AWS, GCP, Azure |
+| cloud_run | Serverless Container | GCP |
+| firebase_auth | Firebase Authentication | GCP |
 | firestore | Cloud Firestore (NoSQL) | GCP |
 | firebase_rtdb | Firebase Realtime Database | GCP |
-| firebase_hosting | Hosting estático / SPA | GCP |
-| dns_record | Registros DNS (CNAME, A, TXT, MX) | GoDaddy |
+| firebase_hosting | Static Hosting / SPA | GCP |
+| dns_record | DNS Records (CNAME, A, TXT, MX) | GoDaddy |
 
-## Instalação
+## Installation
 
 ```bash
 pip install -r requirements.txt
+# Or install as a package
+pip install -e .
 ```
 
-## Uso Rápido
+## Quick Start
 
 ```bash
 cloudforge init --provider gcp --region southamerica-east1
@@ -47,16 +51,16 @@ cloudforge output api-backend
 cloudforge destroy
 ```
 
-## Guia: GCP + Firebase + GoDaddy
+## Guide: GCP + Firebase + GoDaddy
 
-### Pré-requisitos
+### Prerequisites
 
 ```bash
-# 1. Autenticar no GCP
+# 1. Authenticate with GCP
 gcloud auth application-default login
-gcloud config set project SEU_PROJECT_ID
+gcloud config set project YOUR_PROJECT_ID
 
-# 2. Habilitar APIs
+# 2. Enable APIs
 gcloud services enable \
     run.googleapis.com \
     firestore.googleapis.com \
@@ -66,22 +70,22 @@ gcloud services enable \
     artifactregistry.googleapis.com \
     cloudbuild.googleapis.com
 
-# 3. Habilitar Firebase
-# https://console.firebase.google.com → Adicionar projeto → selecionar GCP project
+# 3. Enable Firebase
+# https://console.firebase.google.com → Add project → select GCP project
 
-# 4. Variáveis de ambiente
-export GCP_PROJECT_ID="meu-projeto-id"
-export GODADDY_API_KEY="sua_api_key"
-export GODADDY_API_SECRET="seu_api_secret"
+# 4. Environment Variables
+export GCP_PROJECT_ID="my-project-id"
+export GODADDY_API_KEY="your_api_key"
+export GODADDY_API_SECRET="your_api_secret"
 ```
 
-### Deploy Completo
+### Complete Deployment
 
 ```bash
 cloudforge plan          # Preview
-cloudforge apply         # Provisionar tudo
+cloudforge apply         # Provision everything
 
-# Build e push da imagem
+# Build and push the image
 docker build -t gcr.io/$GCP_PROJECT_ID/api:latest .
 docker push gcr.io/$GCP_PROJECT_ID/api:latest
 
@@ -89,10 +93,13 @@ docker push gcr.io/$GCP_PROJECT_ID/api:latest
 cd frontend && npm run build
 firebase deploy --only hosting
 
-# Verificar DNS
-dig app.meudominio.com.br CNAME +short
+# Check DNS
+# (on Linux/macOS)
+dig app.mydomain.com.br CNAME +short
+# (on Windows PowerShell)
+Resolve-DnsName app.mydomain.com.br -Type CNAME
 ```
 
-## Licença
+## License
 
 MIT
