@@ -1,0 +1,5 @@
+# CloudForge - Provider Cloudflare DNS
+# Instale com: pip install -r requirements-cloudflare.txt
+# Ou: pip install cloudforge[cloudflare]
+
+# Dependência já incluída no core (requests)

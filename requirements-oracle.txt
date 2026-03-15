@@ -1,0 +1,5 @@
+# CloudForge - Provider Oracle Cloud (OCI)
+# Instale com: pip install -r requirements-oracle.txt
+# Ou: pip install cloudforge[oracle]
+
+oci>=2.100.0

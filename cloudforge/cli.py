@@ -10,6 +10,8 @@ from pathlib import Path
 import click
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
+from rich import box
 
 
 console = Console()
@@ -40,14 +42,14 @@ def cli():
 @cli.command()
 @click.option(
     "--provider", "-p",
-    type=click.Choice(["aws", "gcp", "azure"]),
+    type=click.Choice(["aws", "gcp", "azure", "alibaba", "oracle", "digitalocean", "hetzner", "hostinger", "locaweb"]),
     required=True,
     help="Provedor de nuvem",
 )
 @click.option(
     "--region", "-r",
     default="us-east-1",
-    help="Região do provedor (default: us-east-1)",
+    help="Região do provedor (default varia por provider)",
 )
 def init(provider: str, region: str):
     """Inicializa um novo projeto CloudForge."""
@@ -57,6 +59,202 @@ def init(provider: str, region: str):
 
     engine = Engine()
     engine.init(provider, region)
+
+
+@cli.command()
+def providers():
+    """Lista todos os providers disponíveis e seus parâmetros."""
+    console.print(BANNER)
+    
+    from cloudforge.core.engine import PROVIDER_REGISTRY
+    
+    table = Table(
+        title="☁️  CloudForge Providers Disponíveis",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold cyan",
+    )
+    table.add_column("Provider", style="bold green")
+    table.add_column("Nome Interno")
+    table.add_column("Regiões")
+    table.add_column("Recursos Suportados")
+    table.add_column("Instalação")
+    
+    for provider_name, provider_info in PROVIDER_REGISTRY.items():
+        try:
+            # Instanciar provider para obter informações
+            if provider_name == "aws":
+                from cloudforge.providers.aws.provider import AWSProvider
+                p = AWSProvider("us-east-1", {})
+            elif provider_name == "gcp":
+                from cloudforge.providers.gcp.provider import GCPProvider
+                p = GCPProvider("us-central1", {})
+            elif provider_name == "azure":
+                from cloudforge.providers.azure.provider import AzureProvider
+                p = AzureProvider("eastus", {})
+            elif provider_name == "alibaba":
+                from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
+                p = AlibabaCloudProvider("cn-hangzhou", {})
+            elif provider_name == "godaddy":
+                from cloudforge.providers.godaddy.provider import GoDaddyProvider
+                p = GoDaddyProvider("global", {})
+            elif provider_name == "cloudflare":
+                from cloudforge.providers.cloudflare.provider import CloudflareProvider
+                p = CloudflareProvider("global", {})
+            else:
+                continue
+            
+            regions = len(p.list_regions())
+            resources = provider_info.get("resources", [])
+            install_cmd = provider_info.get("install", "pip install cloudforge")
+            
+            table.add_row(
+                provider_info.get("display_name", provider_name),
+                f"[dim]{provider_name}[/dim]",
+                f"{regions} regiões",
+                ", ".join(resources[:5]) + ("..." if len(resources) > 5 else ""),
+                f"[cyan]{install_cmd}[/cyan]",
+            )
+        except Exception as e:
+            table.add_row(
+                provider_info.get("display_name", provider_name),
+                f"[dim]{provider_name}[/dim]",
+                "[yellow]N/A[/yellow]",
+                "[yellow]N/A[/yellow]",
+                f"[dim]{provider_info.get('install', 'N/A')}[/dim]",
+            )
+    
+    console.print(table)
+    
+    # Detalhar recursos por provider
+    console.print("\n[bold]📦 Recursos por Provider:[/bold]\n")
+    
+    for provider_name, provider_info in PROVIDER_REGISTRY.items():
+        resources = provider_info.get("resources", [])
+        if resources:
+            console.print(f"[green]{provider_info.get('display_name', provider_name)}:[/green]")
+            for res in resources:
+                console.print(f"  • {res}")
+            console.print()
+    
+    # Dicas de uso
+    console.print(
+        Panel(
+            "[bold]💡 Dicas de uso:[/bold]\n\n"
+            "1. Instale apenas os providers que você vai usar:\n"
+            "   [cyan]pip install cloudforge[aws][/cyan]  # Apenas AWS\n"
+            "   [cyan]pip install cloudforge[gcp][/cyan]  # Apenas GCP\n"
+            "   [cyan]pip install cloudforge[alibaba][/cyan]  # Apenas Alibaba\n\n"
+            "2. Para instalar todos os providers:\n"
+            "   [cyan]pip install cloudforge[all][/cyan]\n\n"
+            "3. Inicialize um projeto com o provider desejado:\n"
+            "   [cyan]cloudforge init --provider alibaba --region cn-hangzhou[/cyan]",
+            title="📚 Como Usar",
+            border_style="blue",
+        )
+    )
+
+
+@cli.command()
+@click.argument("provider_name", required=False)
+@click.option(
+    "--upgrade", "-u",
+    is_flag=True,
+    default=False,
+    help="Fazer upgrade das dependências existentes",
+)
+def install_deps(provider_name: str | None, upgrade: bool):
+    """Instala dependências de um provider específico.
+    
+    Se nenhum provider for especificado, lista as opções disponíveis.
+    
+    Exemplos:
+        cloudforge install-deps aws       # Instala dependências da AWS
+        cloudforge install-deps gcp       # Instala dependências do GCP
+        cloudforge install-deps alibaba   # Instala dependências do Alibaba
+        cloudforge install-deps           # Lista providers disponíveis
+    """
+    from cloudforge.core.engine import PROVIDER_REGISTRY
+    
+    console.print(BANNER)
+    
+    if not provider_name:
+        # Listar providers disponíveis
+        table = Table(
+            title="📦 Providers Disponíveis para Instalação",
+            box=box.ROUNDED,
+            show_header=True,
+            header_style="bold cyan",
+        )
+        table.add_column("Provider", style="bold green")
+        table.add_column("Comando")
+        table.add_column("Descrição")
+        
+        for name, info in PROVIDER_REGISTRY.items():
+            table.add_row(
+                info.get("display_name", name),
+                f"[cyan]cloudforge install-deps {name}[/cyan]",
+                info.get("description", f"Provider {name}"),
+            )
+        
+        console.print(table)
+        return
+    
+    # Verificar se provider existe
+    if provider_name not in PROVIDER_REGISTRY:
+        console.print(f"[red]✗ Provider '{provider_name}' não encontrado.[/red]")
+        console.print("\nProviders disponíveis:")
+        for name in PROVIDER_REGISTRY.keys():
+            console.print(f"  • {name}")
+        sys.exit(1)
+    
+    provider_info = PROVIDER_REGISTRY[provider_name]
+    deps = provider_info.get("dependencies", [])
+    
+    if not deps:
+        console.print(f"[yellow]⚠ Provider '{provider_name}' não possui dependências extras.[/yellow]")
+        return
+    
+    console.print(
+        Panel(
+            f"[bold]Provider:[/bold] {provider_info.get('display_name', provider_name)}\n"
+            f"[bold]Dependências:[/bold] {len(deps)} pacote(s)\n\n"
+            f"[cyan]{', '.join(deps)}[/cyan]",
+            title=f"📦 Instalando dependências para {provider_name}",
+            border_style="green",
+        )
+    )
+    
+    # Instalar dependências
+    import subprocess
+    
+    flag = "--upgrade" if upgrade else "--quiet"
+    for dep in deps:
+        console.print(f"  Instalando {dep}...")
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", flag, dep],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            if result.returncode == 0:
+                console.print(f"  [green]✓ {dep} instalado[/green]")
+            else:
+                console.print(f"  [red]✗ Erro ao instalar {dep}[/red]")
+        except subprocess.TimeoutExpired:
+            console.print(f"  [red]✗ Timeout ao instalar {dep}[/red]")
+        except Exception as e:
+            console.print(f"  [red]✗ Erro: {e}[/red]")
+    
+    console.print(
+        Panel(
+            "[green]✓ Instalação concluída![/green]\n\n"
+            f"Agora você pode usar: [cyan]cloudforge init --provider {provider_name}[/cyan]",
+            title="Instalação Finalizada",
+            border_style="green",
+        )
+    )
 
 
 @cli.command()

@@ -30,6 +30,124 @@ from cloudforge.resources.dns import DNSRecordResource
 
 console = Console()
 
+# Registry de providers com metadados
+# Usado para listagem e instalação de dependências
+PROVIDER_REGISTRY = {
+    "aws": {
+        "display_name": "Amazon Web Services",
+        "description": "Provider para AWS (EC2, VPC, EKS, RDS)",
+        "dependencies": [
+            "boto3>=1.34.0",
+        ],
+        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database"],
+        "install": "pip install cloudforge[aws]",
+    },
+    "gcp": {
+        "display_name": "Google Cloud Platform",
+        "description": "Provider para GCP (Compute, GKE, Cloud SQL, Firebase)",
+        "dependencies": [
+            "google-cloud-compute>=1.16.0",
+            "google-cloud-container>=2.38.0",
+            "google-cloud-run>=0.10.0",
+            "google-cloud-firestore>=2.16.0",
+            "cloud-sql-python-connector>=1.12.0",
+            "firebase-admin>=6.5.0",
+            "google-auth>=2.28.0",
+        ],
+        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "cloud_run", "firebase_auth", "firestore", "firebase_rtdb", "firebase_hosting"],
+        "install": "pip install cloudforge[gcp]",
+    },
+    "azure": {
+        "display_name": "Microsoft Azure",
+        "description": "Provider para Azure (VMs, VNet, AKS, SQL)",
+        "dependencies": [
+            "azure-mgmt-compute>=30.0.0",
+            "azure-mgmt-network>=25.0.0",
+            "azure-mgmt-containerservice>=28.0.0",
+            "azure-mgmt-rdbms>=10.1.0",
+            "azure-identity>=1.15.0",
+        ],
+        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database"],
+        "install": "pip install cloudforge[azure]",
+    },
+    "alibaba": {
+        "display_name": "Alibaba Cloud (Aliyun)",
+        "description": "Provider para Alibaba Cloud (ECS, VPC, SLB, ACK)",
+        "dependencies": [
+            "alibabacloud_ecs20140526>=3.0.0",
+            "alibabacloud_vpc20160428>=2.0.0",
+            "alibabacloud_slb20140515>=2.0.0",
+            "alibabacloud_tea_openapi>=0.3.0",
+            "alibabacloud_credentials>=0.3.0",
+        ],
+        "resources": ["vm", "vpc", "subnet", "security_group", "slb", "kubernetes", "database"],
+        "install": "pip install cloudforge[alibaba]",
+    },
+    "godaddy": {
+        "display_name": "GoDaddy DNS",
+        "description": "Provider para gerenciamento de DNS na GoDaddy",
+        "dependencies": [
+            "requests>=2.31.0",
+        ],
+        "resources": ["dns_record"],
+        "install": "pip install cloudforge[godaddy]",
+    },
+    "cloudflare": {
+        "display_name": "Cloudflare DNS",
+        "description": "Provider para gerenciamento de DNS na Cloudflare",
+        "dependencies": [
+            "requests>=2.31.0",
+        ],
+        "resources": ["dns_record"],
+        "install": "pip install cloudforge[cloudflare]",
+    },
+    "oracle": {
+        "display_name": "Oracle Cloud Infrastructure (OCI)",
+        "description": "Provider para Oracle Cloud (Compute, VCN, OKE, Autonomous DB)",
+        "dependencies": [
+            "oci>=2.100.0",
+        ],
+        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "lb"],
+        "install": "pip install cloudforge[oracle]",
+    },
+    "digitalocean": {
+        "display_name": "DigitalOcean",
+        "description": "Provider para DigitalOcean (Droplets, Kubernetes, Databases)",
+        "dependencies": [
+            "requests>=2.31.0",
+        ],
+        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "lb"],
+        "install": "pip install cloudforge[digitalocean]",
+    },
+    "hetzner": {
+        "display_name": "Hetzner Cloud",
+        "description": "Provider para Hetzner Cloud (Servers, Networks, Firewalls)",
+        "dependencies": [
+            "requests>=2.31.0",
+        ],
+        "resources": ["vm", "vpc", "subnet", "security_group", "lb"],
+        "install": "pip install cloudforge[hetzner]",
+    },
+    "hostinger": {
+        "display_name": "Hostinger",
+        "description": "Provider para Hostinger (VPS, Websites, Databases, DNS)",
+        "dependencies": [
+            "requests>=2.31.0",
+        ],
+        "resources": ["vm", "website", "database", "dns_record"],
+        "install": "pip install cloudforge[hostinger]",
+    },
+    "locaweb": {
+        "display_name": "Locaweb Cloud",
+        "description": "Provider para Locaweb (Simple Server, Redes, LB, Hospedagem)",
+        "dependencies": [
+            "requests>=2.31.0",
+        ],
+        "resources": ["vm", "vpc", "subnet", "security_group", "lb", "website", "database"],
+        "install": "pip install cloudforge[locaweb]",
+    },
+}
+
 # Mapeamento: tipo de recurso → provider padrão
 # Recursos sem entrada aqui usam o provider principal
 RESOURCE_PROVIDER_MAP = {
@@ -55,6 +173,9 @@ RESOURCE_CLASSES: dict[str, type[BaseResource]] = {
 
 def get_provider(name: str, region: str, credentials: dict | None = None) -> BaseProvider:
     """Factory para instanciar o provider correto."""
+    if name not in PROVIDER_REGISTRY:
+        raise ValueError(f"Provider desconhecido: {name}. Disponíveis: {', '.join(PROVIDER_REGISTRY.keys())}")
+
     if name == "aws":
         from cloudforge.providers.aws.provider import AWSProvider
         return AWSProvider(region, credentials)
@@ -64,9 +185,30 @@ def get_provider(name: str, region: str, credentials: dict | None = None) -> Bas
     elif name == "azure":
         from cloudforge.providers.azure.provider import AzureProvider
         return AzureProvider(region, credentials)
+    elif name == "alibaba":
+        from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
+        return AlibabaCloudProvider(region, credentials)
+    elif name == "oracle":
+        from cloudforge.providers.oracle.provider import OracleCloudProvider
+        return OracleCloudProvider(region, credentials)
+    elif name == "digitalocean":
+        from cloudforge.providers.digitalocean.provider import DigitalOceanProvider
+        return DigitalOceanProvider(region, credentials)
+    elif name == "hetzner":
+        from cloudforge.providers.hetzner.provider import HetznerProvider
+        return HetznerProvider(region, credentials)
+    elif name == "hostinger":
+        from cloudforge.providers.hostinger.provider import HostingerProvider
+        return HostingerProvider(region, credentials)
+    elif name == "locaweb":
+        from cloudforge.providers.locaweb.provider import LocawebProvider
+        return LocawebProvider(region, credentials)
     elif name == "godaddy":
         from cloudforge.providers.godaddy.provider import GoDaddyProvider
         return GoDaddyProvider(region, credentials)
+    elif name == "cloudflare":
+        from cloudforge.providers.cloudflare.provider import CloudflareProvider
+        return CloudflareProvider(region, credentials)
     else:
         raise ValueError(f"Provider desconhecido: {name}")
 

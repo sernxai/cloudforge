@@ -1,87 +1,177 @@
 Metadata-Version: 2.4
 Name: cloudforge
 Version: 1.0.0
-Summary: Infrastructure as Code em Python — multi-cloud (AWS, GCP, Azure)
+Summary: Infrastructure as Code em Python — multi-cloud (AWS, GCP, Azure, Alibaba)
 Author: CloudForge Team
+License: Apache-2.0
+Keywords: iac infrastructure terraform cloud aws gcp azure alibaba
 Classifier: Development Status :: 4 - Beta
 Classifier: Intended Audience :: Developers
 Classifier: Topic :: System :: Systems Administration
-Classifier: License :: OSI Approved :: MIT License
+Classifier: License :: OSI Approved :: Apache Software License
 Classifier: Programming Language :: Python :: 3.11
 Classifier: Programming Language :: Python :: 3.12
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 License-File: LICENSE.txt
-Requires-Dist: boto3>=1.34.0
-Requires-Dist: google-cloud-compute>=1.16.0
-Requires-Dist: google-cloud-container>=2.38.0
-Requires-Dist: google-cloud-run>=0.10.0
-Requires-Dist: google-cloud-firestore>=2.16.0
-Requires-Dist: cloud-sql-python-connector>=1.12.0
-Requires-Dist: firebase-admin>=6.5.0
-Requires-Dist: google-auth>=2.28.0
-Requires-Dist: requests>=2.31.0
-Requires-Dist: azure-mgmt-compute>=30.0.0
-Requires-Dist: azure-mgmt-network>=25.0.0
-Requires-Dist: azure-mgmt-containerservice>=28.0.0
-Requires-Dist: azure-mgmt-rdbms>=10.1.0
-Requires-Dist: azure-identity>=1.15.0
 Requires-Dist: click>=8.1.0
 Requires-Dist: pyyaml>=6.0.1
 Requires-Dist: rich>=13.7.0
-Requires-Dist: docker>=7.0.0
-Requires-Dist: kubernetes>=29.0.0
 Requires-Dist: jinja2>=3.1.3
 Requires-Dist: colorama>=0.4.6
 Requires-Dist: tabulate>=0.9.0
 Requires-Dist: jsonschema>=4.21.0
+Requires-Dist: requests>=2.31.0
+Requires-Dist: docker>=7.0.0
+Requires-Dist: kubernetes>=29.0.0
+Provides-Extra: aws
+Requires-Dist: boto3>=1.34.0; extra == "aws"
+Provides-Extra: gcp
+Requires-Dist: google-cloud-compute>=1.16.0; extra == "gcp"
+Requires-Dist: google-cloud-container>=2.38.0; extra == "gcp"
+Requires-Dist: google-cloud-run>=0.10.0; extra == "gcp"
+Requires-Dist: google-cloud-firestore>=2.16.0; extra == "gcp"
+Requires-Dist: cloud-sql-python-connector>=1.12.0; extra == "gcp"
+Requires-Dist: firebase-admin>=6.5.0; extra == "gcp"
+Requires-Dist: google-auth>=2.28.0; extra == "gcp"
+Provides-Extra: azure
+Requires-Dist: azure-mgmt-compute>=30.0.0; extra == "azure"
+Requires-Dist: azure-mgmt-network>=25.0.0; extra == "azure"
+Requires-Dist: azure-mgmt-containerservice>=28.0.0; extra == "azure"
+Requires-Dist: azure-mgmt-rdbms>=10.1.0; extra == "azure"
+Requires-Dist: azure-identity>=1.15.0; extra == "azure"
+Provides-Extra: alibaba
+Requires-Dist: alibabacloud_ecs20140526>=3.0.0; extra == "alibaba"
+Requires-Dist: alibabacloud_vpc20160428>=2.0.0; extra == "alibaba"
+Requires-Dist: alibabacloud_slb20140515>=2.0.0; extra == "alibaba"
+Requires-Dist: alibabacloud_tea_openapi>=0.3.0; extra == "alibaba"
+Requires-Dist: alibabacloud_credentials>=0.3.0; extra == "alibaba"
+Provides-Extra: dns
+Provides-Extra: all
+Requires-Dist: boto3>=1.34.0; extra == "all"
+Requires-Dist: google-cloud-compute>=1.16.0; extra == "all"
+Requires-Dist: google-cloud-container>=2.38.0; extra == "all"
+Requires-Dist: google-cloud-run>=0.10.0; extra == "all"
+Requires-Dist: google-cloud-firestore>=2.16.0; extra == "all"
+Requires-Dist: cloud-sql-python-connector>=1.12.0; extra == "all"
+Requires-Dist: firebase-admin>=6.5.0; extra == "all"
+Requires-Dist: google-auth>=2.28.0; extra == "all"
+Requires-Dist: azure-mgmt-compute>=30.0.0; extra == "all"
+Requires-Dist: azure-mgmt-network>=25.0.0; extra == "all"
+Requires-Dist: azure-mgmt-containerservice>=28.0.0; extra == "all"
+Requires-Dist: azure-mgmt-rdbms>=10.1.0; extra == "all"
+Requires-Dist: azure-identity>=1.15.0; extra == "all"
+Requires-Dist: alibabacloud_ecs20140526>=3.0.0; extra == "all"
+Requires-Dist: alibabacloud_vpc20160428>=2.0.0; extra == "all"
+Requires-Dist: alibabacloud_slb20140515>=2.0.0; extra == "all"
+Requires-Dist: alibabacloud_tea_openapi>=0.3.0; extra == "all"
+Requires-Dist: alibabacloud_credentials>=0.3.0; extra == "all"
 Dynamic: author
 Dynamic: classifier
 Dynamic: description
 Dynamic: description-content-type
+Dynamic: keywords
+Dynamic: license
 Dynamic: license-file
+Dynamic: provides-extra
 Dynamic: requires-dist
 Dynamic: requires-python
 Dynamic: summary
 
-# CloudForge — Infrastructure as Code em Python
+# CloudForge — Infrastructure as Code in Python
 
-**CloudForge** é uma ferramenta de Infrastructure as Code (IaC) escrita em Python, inspirada no Terraform, que permite definir, provisionar e gerenciar recursos em múltiplos provedores de nuvem usando arquivos YAML declarativos.
+[Português Brasileiro (pt-BR)](README-pt-br.md)
 
-## Funcionalidades
+**CloudForge** is an Infrastructure as Code (IaC) tool written in Python, inspired by Terraform, which allows you to define, provision, and manage resources across multiple cloud providers using declarative YAML files.
 
-- **Multi-cloud**: AWS, GCP e Azure com abstração unificada
-- **Firebase nativo**: Auth, Firestore, Realtime Database e Hosting
-- **Cloud Run**: Deploy serverless de containers no GCP
-- **DNS multi-provider**: GoDaddy (CNAME, A, TXT, MX) integrado
-- **Declarativo**: Infraestrutura inteira definida em YAML
-- **Estado gerenciado**: Controle local (JSON) com diff, backup e rollback
-- **Plan/Apply/Destroy**: Fluxo seguro com preview antes de aplicar
+## Features
 
-## Recursos Suportados
+- **Multi-cloud**: AWS, GCP, Azure, **Alibaba Cloud** with unified abstraction
+- **Native Firebase**: Auth, Firestore, Realtime Database, and Hosting
+- **Cloud Run**: Serverless container deployment on GCP
+- **Multi-provider DNS**: Integrated GoDaddy and Cloudflare (CNAME, A, TXT, MX)
+- **Alibaba Cloud Support**: ECS, VPC, VSwitch, SLB, ACK
+- **Declarative**: Entire infrastructure defined in YAML
+- **Managed State**: Local control (JSON) with diff, backup, and rollback
+- **Plan/Apply/Destroy**: Secure workflow with preview before applying
+- **Advanced Logging**: Structured logging with Rich
+- **Retry Logic**: Automatic retry with exponential backoff for transient errors
 
-| Tipo | Descrição | Providers |
+## Supported Resources
+
+| Type | Description | Providers |
 |---|---|---|
-| vm | Máquinas virtuais | AWS, GCP, Azure |
-| vpc | Virtual Private Cloud / VNet | AWS, GCP, Azure |
-| subnet | Sub-redes | AWS, GCP, Azure |
-| security_group | Firewall / NSG | AWS, GCP, Azure |
-| kubernetes | Clusters K8s (EKS/GKE/AKS) | AWS, GCP, Azure |
-| database | Bancos gerenciados (RDS/SQL/etc) | AWS, GCP, Azure |
-| cloud_run | Container serverless | GCP |
-| firebase_auth | Autenticação Firebase | GCP |
+| vm | Virtual Machines | AWS, GCP, Azure, **Alibaba** |
+| vpc | Virtual Private Cloud / VNet | AWS, GCP, Azure, **Alibaba** |
+| subnet | Subnets | AWS, GCP, Azure, **Alibaba** |
+| security_group | Firewall / NSG | AWS, GCP, Azure, **Alibaba** |
+| kubernetes | K8s Clusters (EKS/GKE/AKS/ACK) | AWS, GCP, Azure, **Alibaba** |
+| database | Managed Databases (RDS/SQL/etc) | AWS, GCP, Azure, **Alibaba** |
+| cloud_run | Serverless Container | GCP |
+| slb | Server Load Balancer | **Alibaba** |
+| firebase_auth | Firebase Authentication | GCP |
 | firestore | Cloud Firestore (NoSQL) | GCP |
 | firebase_rtdb | Firebase Realtime Database | GCP |
-| firebase_hosting | Hosting estático / SPA | GCP |
-| dns_record | Registros DNS (CNAME, A, TXT, MX) | GoDaddy |
+| firebase_hosting | Static Hosting / SPA | GCP |
+| dns_record | DNS Records (CNAME, A, TXT, MX) | GoDaddy, Cloudflare |
 
-## Instalação
+## CloudForge vs OpenTofu
+
+While OpenTofu uses HCL (HashiCorp Configuration Language), CloudForge uses simple, declarative YAML. This makes it easier to read and integrate with other CI/CD tools.
+
+### Example: Creating a VM/Instance
+
+**OpenTofu (HCL):**
+```hcl
+resource "aws_instance" "example" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t2.micro"
+}
+```
+
+**CloudForge (YAML):**
+```yaml
+- type: vm
+  name: example-instance
+  config:
+    instance_type: small
+    os: ubuntu-22.04
+```
+
+### Example: DNS Record
+
+**OpenTofu (HCL):**
+```hcl
+resource "cloudflare_record" "www" {
+  zone_id = "your-zone-id"
+  name    = "www"
+  value   = "192.0.2.1"
+  type    = "A"
+  ttl     = 3600
+}
+```
+
+**CloudForge (YAML):**
+```yaml
+- type: dns_record
+  name: www-record
+  config:
+    domain: example.com
+    type: A
+    name: www
+    value: 192.0.2.1
+    ttl: 3600
+```
+
+## Installation
 
 ```bash
 pip install -r requirements.txt
+# Or install as a package
+pip install -e .
 ```
 
-## Uso Rápido
+## Quick Start
 
 ```bash
 cloudforge init --provider gcp --region southamerica-east1
@@ -93,16 +183,16 @@ cloudforge output api-backend
 cloudforge destroy
 ```
 
-## Guia: GCP + Firebase + GoDaddy
+## Guide: GCP + Firebase + DNS (GoDaddy/Cloudflare)
 
-### Pré-requisitos
+### Prerequisites
 
 ```bash
-# 1. Autenticar no GCP
+# 1. Authenticate with GCP
 gcloud auth application-default login
-gcloud config set project SEU_PROJECT_ID
+gcloud config set project YOUR_PROJECT_ID
 
-# 2. Habilitar APIs
+# 2. Enable APIs
 gcloud services enable \
     run.googleapis.com \
     firestore.googleapis.com \
@@ -112,22 +202,27 @@ gcloud services enable \
     artifactregistry.googleapis.com \
     cloudbuild.googleapis.com
 
-# 3. Habilitar Firebase
-# https://console.firebase.google.com → Adicionar projeto → selecionar GCP project
+# 3. Enable Firebase
+# https://console.firebase.google.com → Add project → select GCP project
 
-# 4. Variáveis de ambiente
-export GCP_PROJECT_ID="meu-projeto-id"
-export GODADDY_API_KEY="sua_api_key"
-export GODADDY_API_SECRET="seu_api_secret"
+# 4. Environment Variables
+export GCP_PROJECT_ID="my-project-id"
+
+# For GoDaddy:
+export GODADDY_API_KEY="your_api_key"
+export GODADDY_API_SECRET="your_api_secret"
+
+# For Cloudflare:
+export CLOUDFLARE_API_TOKEN="your_api_token"
 ```
 
-### Deploy Completo
+### Complete Deployment
 
 ```bash
 cloudforge plan          # Preview
-cloudforge apply         # Provisionar tudo
+cloudforge apply         # Provision everything
 
-# Build e push da imagem
+# Build and push the image
 docker build -t gcr.io/$GCP_PROJECT_ID/api:latest .
 docker push gcr.io/$GCP_PROJECT_ID/api:latest
 
@@ -135,10 +230,141 @@ docker push gcr.io/$GCP_PROJECT_ID/api:latest
 cd frontend && npm run build
 firebase deploy --only hosting
 
-# Verificar DNS
-dig app.meudominio.com.br CNAME +short
+# Check DNS
+# (on Linux/macOS)
+dig app.mydomain.com.br CNAME +short
+# (on Windows PowerShell)
+Resolve-DnsName app.mydomain.com.br -Type CNAME
 ```
 
-## Licença
+## License
 
-MIT
+Apache 2.0
+
+## Guide: Alibaba Cloud (Aliyun)
+
+### Prerequisites
+
+```bash
+# 1. Install Alibaba Cloud SDK
+pip install alibabacloud_ecs20140526 alibabacloud_vpc20160428 alibabacloud_slb20140515
+
+# 2. Get your AccessKey
+# Visit: https://ram.console.aliyun.com/manage/ak
+# Create AccessKey for your user
+
+# 3. Environment Variables
+export ALIBABA_ACCESS_KEY_ID="your_access_key_id"
+export ALIBABA_ACCESS_KEY_SECRET="your_access_key_secret"
+export ALIBABA_REGION="cn-hangzhou"  # or cn-shanghai, cn-beijing, etc.
+```
+
+### Available Regions
+
+| Region | Code |
+|--------|------|
+| China (Hangzhou) | `cn-hangzhou` |
+| China (Shanghai) | `cn-shanghai` |
+| China (Beijing) | `cn-beijing` |
+| China (Shenzhen) | `cn-shenzhen` |
+| Hong Kong | `cn-hongkong` |
+| Singapore | `ap-southeast-1` |
+| US (Silicon Valley) | `us-west-1` |
+| Germany (Frankfurt) | `eu-central-1` |
+
+### Example: Deploy VM on Alibaba Cloud
+
+```yaml
+project:
+  name: alibaba-demo
+  environment: development
+
+provider:
+  name: alibaba
+  region: cn-hangzhou
+  credentials:
+    access_key: ${ALIBABA_ACCESS_KEY_ID}
+    access_key_secret: ${ALIBABA_ACCESS_KEY_SECRET}
+
+resources:
+  # VPC
+  - type: vpc
+    name: main-vpc
+    config:
+      cidr_block: 10.0.0.0/16
+
+  # VSwitch (Subnet)
+  - type: subnet
+    name: public-vswitch
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      cidr_block: 10.0.1.0/24
+      availability_zone: cn-hangzhou-a
+
+  # Security Group
+  - type: security_group
+    name: web-sg
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      ingress:
+        - protocol: tcp
+          port: 80
+          cidr: 0.0.0.0/0
+        - protocol: tcp
+          port: 443
+          cidr: 0.0.0.0/0
+        - protocol: tcp
+          port: 22
+          cidr: 0.0.0.0/0
+
+  # ECS Instance (VM)
+  - type: vm
+    name: web-server
+    depends_on: [public-vswitch, web-sg]
+    config:
+      instance_type: medium
+      os: ubuntu_22_04
+      subnet: public-vswitch
+      security_group: web-sg
+      associate_public_ip: true
+
+  # Server Load Balancer
+  - type: slb
+    name: web-lsb
+    depends_on: [main-vpc, public-vswitch]
+    config:
+      public: true
+      vpc: main-vpc
+      subnet: public-vswitch
+      bandwidth: 10
+      listeners:
+        - frontend_port: 80
+          backend_port: 8080
+```
+
+### Deploy Commands
+
+```bash
+# Initialize project
+cloudforge init --provider alibaba --region cn-hangzhou
+
+# Validate configuration
+cloudforge validate
+
+# Preview changes
+cloudforge plan
+
+# Apply infrastructure
+cloudforge apply
+
+# Check status
+cloudforge status
+
+# Get VM outputs
+cloudforge output web-server
+
+# Destroy everything
+cloudforge destroy
+```

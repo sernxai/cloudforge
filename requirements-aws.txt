@@ -1,0 +1,5 @@
+# CloudForge - Provider AWS
+# Instale com: pip install -r requirements-aws.txt
+# Ou: pip install cloudforge[aws]
+
+boto3>=1.34.0

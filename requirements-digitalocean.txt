@@ -1,0 +1,5 @@
+# CloudForge - Provider DigitalOcean
+# Instale com: pip install -r requirements-digitalocean.txt
+# Ou: pip install cloudforge[digitalocean]
+
+# requests já incluído no core

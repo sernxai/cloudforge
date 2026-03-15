@@ -1,0 +1,247 @@
+# CloudForge - Exemplo de Configuração para Alibaba Cloud
+# Este arquivo demonstra como definir infraestrutura na Alibaba Cloud
+
+project:
+  name: alibaba-demo
+  environment: development
+  description: "Exemplo de infraestrutura na Alibaba Cloud"
+  tags:
+    managed_by: cloudforge
+    project: demo
+
+provider:
+  name: alibaba
+  region: cn-hangzhou
+  credentials:
+    access_key: ${ALIBABA_ACCESS_KEY_ID}
+    access_key_secret: ${ALIBABA_ACCESS_KEY_SECRET}
+
+# Providers externos (ex: DNS)
+external_cloudforge:
+  providers:
+    cloudflare:
+      name: cloudflare
+      credentials:
+        api_token: ${CLOUDFLARE_API_TOKEN}
+
+resources:
+  # ═══════════════════════════════════════════════════════════════
+  # REDE
+  # ═══════════════════════════════════════════════════════════════
+
+  # VPC - Rede Virtual Privada
+  - type: vpc
+    name: main-vpc
+    config:
+      cidr_block: 10.0.0.0/16
+      description: "VPC principal para aplicação"
+
+  # VSwitch - Subnet Pública
+  - type: subnet
+    name: public-vswitch
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      cidr_block: 10.0.1.0/24
+      availability_zone: cn-hangzhou-a
+      description: "Subnet pública para recursos acessíveis pela internet"
+
+  # VSwitch - Subnet Privada
+  - type: subnet
+    name: private-vswitch
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      cidr_block: 10.0.2.0/24
+      availability_zone: cn-hangzhou-b
+      description: "Subnet privada para banco de dados"
+
+  # Security Group - Web
+  - type: security_group
+    name: web-sg
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      description: "Security group para servidores web"
+      ingress:
+        - protocol: tcp
+          port: 80
+          cidr: 0.0.0.0/0
+          description: "HTTP"
+        - protocol: tcp
+          port: 443
+          cidr: 0.0.0.0/0
+          description: "HTTPS"
+        - protocol: tcp
+          port: 22
+          cidr: 0.0.0.0/0
+          description: "SSH"
+      egress:
+        - protocol: tcp
+          port: 0
+          cidr: 0.0.0.0/0
+          description: "Todo tráfego de saída"
+
+  # Security Group - Database
+  - type: security_group
+    name: db-sg
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      description: "Security group para banco de dados"
+      ingress:
+        - protocol: tcp
+          port: 3306
+          cidr: 10.0.1.0/24
+          description: "MySQL da subnet pública"
+        - protocol: tcp
+          port: 5432
+          cidr: 10.0.1.0/24
+          description: "PostgreSQL da subnet pública"
+      egress:
+        - protocol: tcp
+          port: 0
+          cidr: 0.0.0.0/0
+
+  # ═══════════════════════════════════════════════════════════════
+  # COMPUTAÇÃO
+  # ═══════════════════════════════════════════════════════════════
+
+  # ECS Instance - Servidor Web
+  - type: vm
+    name: web-server
+    depends_on: [public-vswitch, web-sg]
+    config:
+      instance_type: medium  # ecs.c6.xlarge
+      os: ubuntu_22_04
+      disk_size_gb: 40
+      subnet: public-vswitch
+      security_group: web-sg
+      associate_public_ip: true
+      tags:
+        Name: web-server
+        Role: web
+        Environment: development
+
+  # ECS Instance - Servidor de Aplicação
+  - type: vm
+    name: app-server
+    depends_on: [private-vswitch, web-sg]
+    config:
+      instance_type: large  # ecs.c6.2xlarge
+      os: ubuntu_22_04
+      disk_size_gb: 60
+      subnet: private-vswitch
+      security_group: web-sg
+      associate_public_ip: false
+      tags:
+        Name: app-server
+        Role: application
+        Environment: development
+
+  # ═══════════════════════════════════════════════════════════════
+  # LOAD BALANCER
+  # ═══════════════════════════════════════════════════════════════
+
+  # SLB - Server Load Balancer
+  - type: slb
+    name: web-lsb
+    depends_on: [main-vpc, public-vswitch]
+    config:
+      public: true
+      vpc: main-vpc
+      subnet: public-vswitch
+      bandwidth: 10
+      charge_type: PayByTraffic
+      listeners:
+        - frontend_port: 80
+          backend_port: 8080
+          bandwidth: -1
+        - frontend_port: 443
+          backend_port: 8443
+          bandwidth: -1
+
+  # ═══════════════════════════════════════════════════════════════
+  # BANCO DE DADOS
+  # ═══════════════════════════════════════════════════════════════
+
+  # RDS - MySQL
+  - type: database
+    name: main-db
+    depends_on: [private-vswitch, db-sg]
+    config:
+      engine: mysql
+      version: "8.0"
+      instance_type: db.rds.large
+      storage_gb: 100
+      multi_az: true
+      backup_retention_days: 7
+      publicly_accessible: false
+      master_username: admin
+      database_name: appdb
+      tags:
+        Name: main-db
+        Environment: development
+
+  # ═══════════════════════════════════════════════════════════════
+  # KUBERNETES
+  # ═══════════════════════════════════════════════════════════════
+
+  # ACK - Alibaba Cloud Kubernetes
+  - type: kubernetes
+    name: k8s-cluster
+    depends_on: [main-vpc, public-vswitch, private-vswitch]
+    config:
+      node_count: 3
+      node_type: ecs.c6.xlarge
+      kubernetes_version: "1.28"
+      min_nodes: 2
+      max_nodes: 10
+      auto_scaling: true
+      disk_size_gb: 100
+      tags:
+        Name: k8s-cluster
+        Environment: development
+
+  # ═══════════════════════════════════════════════════════════════
+  # DNS (usando Cloudflare como exemplo)
+  # ═══════════════════════════════════════════════════════════════
+
+  # DNS Record - A
+  - type: dns_record
+    name: app-dns
+    depends_on: [web-lsb]
+    config:
+      domain: example.com.br
+      type: A
+      name: app
+      value: "1.2.3.4"  # Será substituído pelo IP do SLB
+      ttl: 3600
+
+  # DNS Record - CNAME
+  - type: dns_record
+    name: www-dns
+    depends_on: [app-dns]
+    config:
+      domain: example.com.br
+      type: CNAME
+      name: www
+      value: app.example.com.br
+      ttl: 3600
+
+# ═══════════════════════════════════════════════════════════════
+# DEPLOY DE APLICAÇÃO
+# ═══════════════════════════════════════════════════════════════
+
+deploy:
+  image: registry.cn-hangzhou.aliyuncs.com/myapp/api:latest
+  target: k8s-cluster
+  replicas: 3
+  port: 8080
+  env:
+    DATABASE_URL: mysql://admin:password@main-db:3306/appdb
+    REDIS_URL: redis://redis:6379
+    LOG_LEVEL: info
+  resources:
+    cpu: "500m"
+    memory: "512Mi"

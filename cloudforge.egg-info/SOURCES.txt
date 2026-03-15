@@ -13,12 +13,17 @@ cloudforge/core/__init__.py
 cloudforge/core/config.py
 cloudforge/core/engine.py
 cloudforge/core/graph.py
+cloudforge/core/logger.py
 cloudforge/core/planner.py
+cloudforge/core/retry.py
+cloudforge/core/schema.py
 cloudforge/core/state.py
 cloudforge/deploy/__init__.py
 cloudforge/deploy/docker_deployer.py
 cloudforge/providers/__init__.py
 cloudforge/providers/base.py
+cloudforge/providers/alibaba/__init__.py
+cloudforge/providers/alibaba/provider.py
 cloudforge/providers/aws/__init__.py
 cloudforge/providers/aws/provider.py
 cloudforge/providers/azure/__init__.py

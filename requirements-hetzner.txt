@@ -1,0 +1,5 @@
+# CloudForge - Provider Hetzner Cloud
+# Instale com: pip install -r requirements-hetzner.txt
+# Ou: pip install cloudforge[hetzner]
+
+# requests já incluído no core

@@ -1,0 +1,5 @@
+# CloudForge - Provider Locaweb
+# Instale com: pip install -r requirements-locaweb.txt
+# Ou: pip install cloudforge[locaweb]
+
+# requests já incluído no core

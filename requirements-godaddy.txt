@@ -1,0 +1,5 @@
+# CloudForge - Provider GoDaddy DNS
+# Instale com: pip install -r requirements-godaddy.txt
+# Ou: pip install cloudforge[godaddy]
+
+# Dependência já incluída no core (requests)

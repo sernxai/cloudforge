@@ -6,30 +6,34 @@
 
 ## Features
 
-- **Multi-cloud**: AWS, GCP, and Azure with unified abstraction
+- **Multi-cloud**: AWS, GCP, Azure, **Alibaba Cloud** with unified abstraction
 - **Native Firebase**: Auth, Firestore, Realtime Database, and Hosting
 - **Cloud Run**: Serverless container deployment on GCP
-- **Multi-provider DNS**: Integrated GoDaddy (CNAME, A, TXT, MX)
+- **Multi-provider DNS**: Integrated GoDaddy and Cloudflare (CNAME, A, TXT, MX)
+- **Alibaba Cloud Support**: ECS, VPC, VSwitch, SLB, ACK
 - **Declarative**: Entire infrastructure defined in YAML
 - **Managed State**: Local control (JSON) with diff, backup, and rollback
 - **Plan/Apply/Destroy**: Secure workflow with preview before applying
+- **Advanced Logging**: Structured logging with Rich
+- **Retry Logic**: Automatic retry with exponential backoff for transient errors
 
 ## Supported Resources
 
 | Type | Description | Providers |
 |---|---|---|
-| vm | Virtual Machines | AWS, GCP, Azure |
-| vpc | Virtual Private Cloud / VNet | AWS, GCP, Azure |
-| subnet | Subnets | AWS, GCP, Azure |
-| security_group | Firewall / NSG | AWS, GCP, Azure |
-| kubernetes | K8s Clusters (EKS/GKE/AKS) | AWS, GCP, Azure |
-| database | Managed Databases (RDS/SQL/etc) | AWS, GCP, Azure |
+| vm | Virtual Machines | AWS, GCP, Azure, **Alibaba** |
+| vpc | Virtual Private Cloud / VNet | AWS, GCP, Azure, **Alibaba** |
+| subnet | Subnets | AWS, GCP, Azure, **Alibaba** |
+| security_group | Firewall / NSG | AWS, GCP, Azure, **Alibaba** |
+| kubernetes | K8s Clusters (EKS/GKE/AKS/ACK) | AWS, GCP, Azure, **Alibaba** |
+| database | Managed Databases (RDS/SQL/etc) | AWS, GCP, Azure, **Alibaba** |
 | cloud_run | Serverless Container | GCP |
+| slb | Server Load Balancer | **Alibaba** |
 | firebase_auth | Firebase Authentication | GCP |
 | firestore | Cloud Firestore (NoSQL) | GCP |
 | firebase_rtdb | Firebase Realtime Database | GCP |
 | firebase_hosting | Static Hosting / SPA | GCP |
-| dns_record | DNS Records (CNAME, A, TXT, MX) | GoDaddy |
+| dns_record | DNS Records (CNAME, A, TXT, MX) | GoDaddy, Cloudflare |
 
 ## CloudForge vs OpenTofu
 
@@ -99,7 +103,7 @@ cloudforge output api-backend
 cloudforge destroy
 ```
 
-## Guide: GCP + Firebase + GoDaddy
+## Guide: GCP + Firebase + DNS (GoDaddy/Cloudflare)
 
 ### Prerequisites
 
@@ -123,8 +127,13 @@ gcloud services enable \
 
 # 4. Environment Variables
 export GCP_PROJECT_ID="my-project-id"
+
+# For GoDaddy:
 export GODADDY_API_KEY="your_api_key"
 export GODADDY_API_SECRET="your_api_secret"
+
+# For Cloudflare:
+export CLOUDFLARE_API_TOKEN="your_api_token"
 ```
 
 ### Complete Deployment
@@ -150,4 +159,132 @@ Resolve-DnsName app.mydomain.com.br -Type CNAME
 
 ## License
 
-MIT
+Apache 2.0
+
+## Guide: Alibaba Cloud (Aliyun)
+
+### Prerequisites
+
+```bash
+# 1. Install Alibaba Cloud SDK
+pip install alibabacloud_ecs20140526 alibabacloud_vpc20160428 alibabacloud_slb20140515
+
+# 2. Get your AccessKey
+# Visit: https://ram.console.aliyun.com/manage/ak
+# Create AccessKey for your user
+
+# 3. Environment Variables
+export ALIBABA_ACCESS_KEY_ID="your_access_key_id"
+export ALIBABA_ACCESS_KEY_SECRET="your_access_key_secret"
+export ALIBABA_REGION="cn-hangzhou"  # or cn-shanghai, cn-beijing, etc.
+```
+
+### Available Regions
+
+| Region | Code |
+|--------|------|
+| China (Hangzhou) | `cn-hangzhou` |
+| China (Shanghai) | `cn-shanghai` |
+| China (Beijing) | `cn-beijing` |
+| China (Shenzhen) | `cn-shenzhen` |
+| Hong Kong | `cn-hongkong` |
+| Singapore | `ap-southeast-1` |
+| US (Silicon Valley) | `us-west-1` |
+| Germany (Frankfurt) | `eu-central-1` |
+
+### Example: Deploy VM on Alibaba Cloud
+
+```yaml
+project:
+  name: alibaba-demo
+  environment: development
+
+provider:
+  name: alibaba
+  region: cn-hangzhou
+  credentials:
+    access_key: ${ALIBABA_ACCESS_KEY_ID}
+    access_key_secret: ${ALIBABA_ACCESS_KEY_SECRET}
+
+resources:
+  # VPC
+  - type: vpc
+    name: main-vpc
+    config:
+      cidr_block: 10.0.0.0/16
+
+  # VSwitch (Subnet)
+  - type: subnet
+    name: public-vswitch
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      cidr_block: 10.0.1.0/24
+      availability_zone: cn-hangzhou-a
+
+  # Security Group
+  - type: security_group
+    name: web-sg
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      ingress:
+        - protocol: tcp
+          port: 80
+          cidr: 0.0.0.0/0
+        - protocol: tcp
+          port: 443
+          cidr: 0.0.0.0/0
+        - protocol: tcp
+          port: 22
+          cidr: 0.0.0.0/0
+
+  # ECS Instance (VM)
+  - type: vm
+    name: web-server
+    depends_on: [public-vswitch, web-sg]
+    config:
+      instance_type: medium
+      os: ubuntu_22_04
+      subnet: public-vswitch
+      security_group: web-sg
+      associate_public_ip: true
+
+  # Server Load Balancer
+  - type: slb
+    name: web-lsb
+    depends_on: [main-vpc, public-vswitch]
+    config:
+      public: true
+      vpc: main-vpc
+      subnet: public-vswitch
+      bandwidth: 10
+      listeners:
+        - frontend_port: 80
+          backend_port: 8080
+```
+
+### Deploy Commands
+
+```bash
+# Initialize project
+cloudforge init --provider alibaba --region cn-hangzhou
+
+# Validate configuration
+cloudforge validate
+
+# Preview changes
+cloudforge plan
+
+# Apply infrastructure
+cloudforge apply
+
+# Check status
+cloudforge status
+
+# Get VM outputs
+cloudforge output web-server
+
+# Destroy everything
+cloudforge destroy
+```

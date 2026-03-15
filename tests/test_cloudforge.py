@@ -1,6 +1,6 @@
 """
 CloudForge — Testes Unitários
-Cobre: Config, State, Graph, Planner, Resources
+Cobre: Config, State, Graph, Planner, Resources, Alibaba Cloud, Logging, Retry, Schema
 """
 
 import json
@@ -19,6 +19,9 @@ from core.config import Config, ConfigError
 from core.state import StateManager, ResourceState
 from core.graph import DependencyGraph, CyclicDependencyError
 from core.planner import Planner, ActionType
+from core.logger import CloudForgeLogger, get_logger, retry_with_backoff, RetryError
+from core.schema import SchemaValidator, validate_config, SchemaValidationError
+from core.retry import retry_on_exception, retry_cloud_operation, RetryConfig
 from resources.vm import VMResource
 from resources.network import VPCResource, SubnetResource, SecurityGroupResource
 from resources.kubernetes import KubernetesResource
@@ -1142,3 +1145,394 @@ class TestConfigNewResources:
         result = config.load()
         assert result["resources"][0]["type"] == "dns_record"
         assert "godaddy" in result["external_providers"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: Alibaba Cloud Provider
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestAlibabaCloudProvider:
+    """Testes para o provider Alibaba Cloud."""
+
+    def test_provider_name(self):
+        from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
+        provider = AlibabaCloudProvider("cn-hangzhou", {})
+        assert provider.PROVIDER_NAME == "alibaba"
+
+    def test_list_regions(self):
+        from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
+        provider = AlibabaCloudProvider("cn-hangzhou", {})
+        regions = provider.list_regions()
+        assert "cn-hangzhou" in regions
+        assert "cn-shanghai" in regions
+        assert "us-west-1" in regions
+        assert "eu-central-1" in regions
+
+    def test_region_zones_mapping(self):
+        from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
+        provider = AlibabaCloudProvider("cn-hangzhou", {})
+        assert "cn-hangzhou" in provider.REGION_ZONES
+        assert len(provider.REGION_ZONES["cn-hangzhou"]) > 0
+
+    def test_get_zone_for_region(self):
+        from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
+        provider = AlibabaCloudProvider("cn-hangzhou", {})
+        zone = provider._get_zone_for_region()
+        assert zone.startswith("cn-hangzhou-")
+
+    def test_resolve_image_id(self):
+        from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
+        provider = AlibabaCloudProvider("cn-hangzhou", {})
+        
+        assert "ubuntu_22_04" in provider._resolve_image_id("ubuntu_22_04")
+        assert "centos_7" in provider._resolve_image_id("centos_7")
+        assert "windows_2019" in provider._resolve_image_id("windows_2019")
+
+    def test_authenticate_requires_credentials(self):
+        from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
+        from cloudforge.providers.base import ProviderError
+        
+        provider = AlibabaCloudProvider("cn-hangzhou", {})
+        # Sem credenciais, autenticação deve falhar
+        with pytest.raises(ProviderError):
+            provider.authenticate()
+
+    def test_validate_credentials_without_auth(self):
+        from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
+        provider = AlibabaCloudProvider("cn-hangzhou", {})
+        # Sem autenticação prévia, deve retornar False
+        assert provider.validate_credentials() == False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: Logging
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestLogging:
+    """Testes para o módulo de logging."""
+
+    def test_logger_singleton(self):
+        logger1 = CloudForgeLogger()
+        logger2 = CloudForgeLogger()
+        assert logger1 is logger2
+
+    def test_get_logger(self):
+        logger = get_logger("test")
+        assert logger is not None
+        assert isinstance(logger, CloudForgeLogger)
+
+    def test_set_context(self):
+        logger = get_logger("test_ctx")
+        logger.set_context(project="test", resource="vm-1")
+        assert logger.context == {"project": "test", "resource": "vm-1"}
+
+    def test_clear_context(self):
+        logger = get_logger("test_clear")
+        logger.set_context(a="b")
+        logger.clear_context()
+        assert logger.context == {}
+
+    def test_log_levels(self, caplog):
+        import logging
+        logger = get_logger("test_levels", level="DEBUG")
+        logger.logger.addHandler(caplog.handler)
+        
+        logger.debug("debug msg")
+        logger.info("info msg")
+        logger.warning("warning msg")
+        logger.error("error msg")
+        
+        assert "debug msg" in caplog.text
+        assert "info msg" in caplog.text
+        assert "warning msg" in caplog.text
+        assert "error msg" in caplog.text
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: Retry
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestRetry:
+    """Testes para o módulo de retry."""
+
+    def test_retry_success_on_first_attempt(self):
+        call_count = 0
+        
+        @retry_with_backoff(max_attempts=3)
+        def succeed_immediately():
+            nonlocal call_count
+            call_count += 1
+            return "success"
+        
+        result = succeed_immediately()
+        assert result == "success"
+        assert call_count == 1
+
+    def test_retry_succeeds_after_failures(self):
+        call_count = 0
+        
+        @retry_with_backoff(max_attempts=3, base_delay=0.01)
+        def succeed_after_two_failures():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("temporary error")
+            return "success"
+        
+        result = succeed_after_two_failures()
+        assert result == "success"
+        assert call_count == 3
+
+    def test_retry_exhausts_all_attempts(self):
+        call_count = 0
+        
+        @retry_with_backoff(max_attempts=3, base_delay=0.01)
+        def always_fails():
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("permanent error")
+        
+        with pytest.raises(RetryError) as exc_info:
+            always_fails()
+        
+        assert call_count == 3
+        assert exc_info.value.attempts == 3
+
+    def test_retry_only_on_specified_exceptions(self):
+        call_count = 0
+        
+        @retry_with_backoff(
+            max_attempts=3,
+            base_delay=0.01,
+            retryable_exceptions=(ValueError,)
+        )
+        def raise_type_error():
+            nonlocal call_count
+            call_count += 1
+            raise TypeError("not retryable")
+        
+        with pytest.raises(TypeError):
+            raise_type_error()
+        
+        assert call_count == 1  # Não retenta para TypeError
+
+    def test_retry_on_exception_decorator(self):
+        call_count = 0
+        
+        @retry_on_exception(ConnectionError, max_attempts=3, message="Connection failed")
+        def flaky_connection():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ConnectionError("lost connection")
+            return "connected"
+        
+        result = flaky_connection()
+        assert result == "connected"
+        assert call_count == 2
+
+    def test_retry_config_execute(self):
+        config = RetryConfig(max_attempts=3, base_delay=0.01)
+        call_count = 0
+        
+        def may_fail():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise TimeoutError("timeout")
+            return "ok"
+        
+        result = config.execute(may_fail)
+        assert result == "ok"
+        assert call_count == 2
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: Schema Validation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestSchemaValidation:
+    """Testes para validação de schema."""
+
+    def test_valid_config(self):
+        config = {
+            "project": {"name": "test-project"},
+            "provider": {"name": "aws", "region": "us-east-1"},
+            "resources": [
+                {"type": "vpc", "name": "main-vpc", "config": {"cidr_block": "10.0.0.0/16"}}
+            ],
+        }
+        is_valid, errors = validate_config(config)
+        assert is_valid
+        assert len(errors) == 0
+
+    def test_missing_required_fields(self):
+        config = {
+            "project": {},  # Falta name
+            "provider": {"name": "aws"},  # Falta region
+            "resources": [],  # Vazio não é permitido
+        }
+        is_valid, errors = validate_config(config)
+        assert not is_valid
+        assert len(errors) > 0
+
+    def test_invalid_provider_name(self):
+        config = {
+            "project": {"name": "test"},
+            "provider": {"name": "invalid-provider", "region": "us-east-1"},
+            "resources": [
+                {"type": "vm", "name": "vm1", "config": {}}
+            ],
+        }
+        is_valid, errors = validate_config(config)
+        assert not is_valid
+        assert any("invalid-provider" in str(e) or "enum" in str(e).lower() for e in errors)
+
+    def test_invalid_resource_type(self):
+        config = {
+            "project": {"name": "test"},
+            "provider": {"name": "aws", "region": "us-east-1"},
+            "resources": [
+                {"type": "invalid-type", "name": "res1", "config": {}}
+            ],
+        }
+        is_valid, errors = validate_config(config)
+        assert not is_valid
+        assert any("invalid-type" in str(e) for e in errors)
+
+    def test_invalid_vm_config(self):
+        config = {
+            "project": {"name": "test"},
+            "provider": {"name": "aws", "region": "us-east-1"},
+            "resources": [
+                {
+                    "type": "vm",
+                    "name": "vm1",
+                    "config": {"disk_size_gb": 5}  # Mínimo é 10
+                }
+            ],
+        }
+        is_valid, errors = validate_config(config)
+        assert not is_valid
+        assert any("disk_size" in str(e).lower() or "minimum" in str(e).lower() for e in errors)
+
+    def test_invalid_cidr_block_format(self):
+        config = {
+            "project": {"name": "test"},
+            "provider": {"name": "aws", "region": "us-east-1"},
+            "resources": [
+                {
+                    "type": "vpc",
+                    "name": "vpc1",
+                    "config": {"cidr_block": "invalid-cidr"}
+                }
+            ],
+        }
+        is_valid, errors = validate_config(config)
+        assert not is_valid
+        assert any("cidr" in str(e).lower() or "pattern" in str(e).lower() for e in errors)
+
+    def test_schema_validator_class(self):
+        validator = SchemaValidator()
+        config = {
+            "project": {"name": "test"},
+            "provider": {"name": "gcp", "region": "us-central1"},
+            "resources": [
+                {"type": "vpc", "name": "vpc1", "config": {"cidr_block": "10.0.0.0/16"}}
+            ],
+        }
+        is_valid, errors = validator.validate(config)
+        assert is_valid
+
+    def test_validate_or_raise(self):
+        from core.schema import validate_config_or_raise
+        
+        valid_config = {
+            "project": {"name": "test"},
+            "provider": {"name": "aws", "region": "us-east-1"},
+            "resources": [
+                {"type": "vpc", "name": "vpc1", "config": {"cidr_block": "10.0.0.0/16"}}
+            ],
+        }
+        # Não deve levantar exceção
+        validate_config_or_raise(valid_config)
+
+    def test_validate_or_raise_raises_exception(self):
+        from core.schema import validate_config_or_raise
+        
+        invalid_config = {
+            "project": {},  # Inválido
+            "provider": {"name": "invalid", "region": "x"},
+            "resources": [],
+        }
+        with pytest.raises(SchemaValidationError):
+            validate_config_or_raise(invalid_config)
+
+    def test_alibaba_resource_type(self):
+        """Testa que 'alibaba' é um provider válido e 'slb' é um tipo de recurso válido."""
+        config = {
+            "project": {"name": "test"},
+            "provider": {"name": "alibaba", "region": "cn-hangzhou"},
+            "resources": [
+                {"type": "slb", "name": "lb1", "config": {"name": "my-lb"}},
+            ],
+        }
+        is_valid, errors = validate_config(config)
+        # slb deve ser um tipo válido
+        assert all("slb" not in str(e) for e in errors)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: Integração com Alibaba Cloud no Config
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestAlibabaConfigIntegration:
+    """Testes de integração com Alibaba Cloud no Config."""
+
+    def test_alibaba_provider_in_config(self, tmp_path):
+        data = {
+            "project": {"name": "alibaba-test"},
+            "provider": {"name": "alibaba", "region": "cn-hangzhou"},
+            "resources": [
+                {
+                    "type": "vpc",
+                    "name": "main-vpc",
+                    "config": {"cidr_block": "10.0.0.0/16"},
+                },
+            ],
+        }
+        cfg_path = tmp_path / "alibaba.yaml"
+        with open(cfg_path, "w") as f:
+            yaml.dump(data, f)
+        config = Config(str(cfg_path))
+        result = config.load()
+        assert result["provider"]["name"] == "alibaba"
+
+    def test_alibaba_vm_resource(self, tmp_path):
+        data = {
+            "project": {"name": "alibaba-vm-test"},
+            "provider": {"name": "alibaba", "region": "cn-hangzhou"},
+            "resources": [
+                {
+                    "type": "vm",
+                    "name": "ecs-instance",
+                    "config": {
+                        "instance_type": "medium",
+                        "os": "ubuntu_22_04",
+                        "disk_size_gb": 40,
+                    },
+                },
+            ],
+        }
+        cfg_path = tmp_path / "alibaba_vm.yaml"
+        with open(cfg_path, "w") as f:
+            yaml.dump(data, f)
+        config = Config(str(cfg_path))
+        result = config.load()
+        assert len(result["resources"]) == 1
+        assert result["resources"][0]["type"] == "vm"

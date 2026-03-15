@@ -1,0 +1,5 @@
+# CloudForge - Provider Hostinger
+# Instale com: pip install -r requirements-hostinger.txt
+# Ou: pip install cloudforge[hostinger]
+
+# requests já incluído no core
