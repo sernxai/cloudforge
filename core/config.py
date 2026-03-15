@@ -35,6 +35,17 @@ INFRASTRUCTURE_SCHEMA = {
                 "credentials": {"type": "object"},
             },
         },
+        "external_providers": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "object",
+                "properties": {
+                    "api_key": {"type": "string"},
+                    "api_secret": {"type": "string"},
+                    "environment": {"type": "string"},
+                },
+            },
+        },
         "resources": {
             "type": "array",
             "items": {
@@ -50,10 +61,17 @@ INFRASTRUCTURE_SCHEMA = {
                             "security_group",
                             "kubernetes",
                             "database",
+                            "cloud_run",
+                            "firebase_auth",
+                            "firestore",
+                            "firebase_rtdb",
+                            "firebase_hosting",
+                            "dns_record",
                         ],
                     },
                     "name": {"type": "string", "pattern": "^[a-z0-9-]+$"},
                     "depends_on": {"type": "array", "items": {"type": "string"}},
+                    "provider": {"type": "string"},
                     "config": {"type": "object"},
                 },
             },
@@ -61,7 +79,7 @@ INFRASTRUCTURE_SCHEMA = {
         "deploy": {
             "type": "object",
             "properties": {
-                "type": {"type": "string", "enum": ["docker"]},
+                "type": {"type": "string", "enum": ["docker", "cloud_run"]},
                 "image": {"type": "string"},
                 "target": {"type": "string"},
                 "replicas": {"type": "integer", "minimum": 1},
@@ -172,3 +190,7 @@ class Config:
     @property
     def deploy(self) -> dict | None:
         return self._data.get("deploy")
+
+    @property
+    def external_providers(self) -> dict:
+        return self._data.get("external_providers", {})

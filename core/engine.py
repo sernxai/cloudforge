@@ -19,9 +19,22 @@ from resources.vm import VMResource
 from resources.network import VPCResource, SubnetResource, SecurityGroupResource
 from resources.kubernetes import KubernetesResource
 from resources.database import DatabaseResource
+from resources.cloud_run import CloudRunResource
+from resources.firebase import (
+    FirebaseAuthResource,
+    FirestoreResource,
+    FirebaseRealtimeDBResource,
+    FirebaseHostingResource,
+)
+from resources.dns import DNSRecordResource
 
 console = Console()
 
+# Mapeamento: tipo de recurso → provider padrão
+# Recursos sem entrada aqui usam o provider principal
+RESOURCE_PROVIDER_MAP = {
+    "dns_record": "godaddy",
+}
 
 # Registry de tipos de recurso
 RESOURCE_CLASSES: dict[str, type[BaseResource]] = {
@@ -31,6 +44,12 @@ RESOURCE_CLASSES: dict[str, type[BaseResource]] = {
     "security_group": SecurityGroupResource,
     "kubernetes": KubernetesResource,
     "database": DatabaseResource,
+    "cloud_run": CloudRunResource,
+    "firebase_auth": FirebaseAuthResource,
+    "firestore": FirestoreResource,
+    "firebase_rtdb": FirebaseRealtimeDBResource,
+    "firebase_hosting": FirebaseHostingResource,
+    "dns_record": DNSRecordResource,
 }
 
 
@@ -45,6 +64,9 @@ def get_provider(name: str, region: str, credentials: dict | None = None) -> Bas
     elif name == "azure":
         from providers.azure.provider import AzureProvider
         return AzureProvider(region, credentials)
+    elif name == "godaddy":
+        from providers.godaddy.provider import GoDaddyProvider
+        return GoDaddyProvider(region, credentials)
     else:
         raise ValueError(f"Provider desconhecido: {name}")
 
@@ -60,6 +82,7 @@ class Engine:
         self.config = Config(config_path)
         self.state = StateManager(state_path)
         self.provider: BaseProvider | None = None
+        self._external_providers: dict[str, BaseProvider] = {}
         self._resource_outputs: dict[str, dict] = {}
 
     def init(self, provider_name: str, region: str) -> None:
@@ -212,7 +235,7 @@ class Engine:
             Panel("Aplicando mudanças...", title="☁️  CloudForge Apply", border_style="cyan")
         )
 
-        # Inicializar provider
+        # Inicializar provider principal
         provider_config = self.config.provider
         self.provider = get_provider(
             provider_config["name"],
@@ -220,6 +243,17 @@ class Engine:
             provider_config.get("credentials"),
         )
         self.provider.authenticate()
+
+        # Inicializar providers externos (ex: GoDaddy para DNS)
+        for ext_name, ext_creds in self.config.external_providers.items():
+            try:
+                ext_provider = get_provider(ext_name, "global", ext_creds)
+                ext_provider.authenticate()
+                self._external_providers[ext_name] = ext_provider
+            except Exception as e:
+                console.print(
+                    f"[yellow]⚠ Provider externo '{ext_name}': {e}[/yellow]"
+                )
 
         success = True
 
@@ -342,13 +376,24 @@ class Engine:
                 console.print("[yellow]Destruição cancelada.[/yellow]")
                 return False
 
-        # Inicializar provider
+        # Inicializar provider principal
         provider_config = self.config.load()
         prov = self.config.provider
         self.provider = get_provider(
             prov["name"], prov["region"], prov.get("credentials")
         )
         self.provider.authenticate()
+
+        # Inicializar providers externos
+        for ext_name, ext_creds in self.config.external_providers.items():
+            try:
+                ext_provider = get_provider(ext_name, "global", ext_creds)
+                ext_provider.authenticate()
+                self._external_providers[ext_name] = ext_provider
+            except Exception as e:
+                console.print(
+                    f"[yellow]⚠ Provider externo '{ext_name}': {e}[/yellow]"
+                )
 
         # Destruir em ordem reversa topológica
         graph = DependencyGraph.from_resources(self.config.resources)
@@ -364,7 +409,8 @@ class Engine:
                 f"  [red]Destruindo {res_state.resource_type} '{name}'...[/red]"
             )
 
-            result = self.provider.delete_resource(
+            provider = self._get_provider_for_resource(res_state.resource_type)
+            result = provider.delete_resource(
                 res_state.resource_type, res_state.provider_id or name
             )
 
@@ -385,6 +431,15 @@ class Engine:
 
     # ── Helpers internos ──────────────────────────────────────────
 
+    def _get_provider_for_resource(self, resource_type: str) -> BaseProvider:
+        """Retorna o provider correto para um tipo de recurso."""
+        # Verificar se o recurso tem provider externo mapeado
+        ext_name = RESOURCE_PROVIDER_MAP.get(resource_type)
+        if ext_name and ext_name in self._external_providers:
+            return self._external_providers[ext_name]
+        # Caso contrário, usar o provider principal
+        return self.provider
+
     def _apply_create(self, action) -> ResourceResult:
         """Aplica criação de um recurso."""
         res_class = RESOURCE_CLASSES.get(action.resource_type)
@@ -394,10 +449,13 @@ class Engine:
                 error=f"Tipo desconhecido: {action.resource_type}",
             )
 
+        # Resolver provider correto para este recurso
+        provider = self._get_provider_for_resource(action.resource_type)
+
         resource = res_class(
             name=action.resource_name,
             config=action.config,
-            provider=self.provider,
+            provider=provider,
         )
 
         # Resolver referências a outputs de outros recursos
@@ -426,7 +484,8 @@ class Engine:
 
     def _apply_update(self, action) -> ResourceResult:
         """Aplica atualização de um recurso."""
-        return self.provider.update_resource(
+        provider = self._get_provider_for_resource(action.resource_type)
+        return provider.update_resource(
             action.resource_type,
             action.resource_name,
             action.config,
@@ -435,10 +494,11 @@ class Engine:
 
     def _apply_delete(self, action) -> ResourceResult:
         """Aplica deleção de um recurso."""
+        provider = self._get_provider_for_resource(action.resource_type)
         res_state = self.state.get_resource(action.resource_name)
         provider_id = res_state.provider_id if res_state else action.resource_name
 
-        result = self.provider.delete_resource(action.resource_type, provider_id)
+        result = provider.delete_resource(action.resource_type, provider_id)
 
         if result.success:
             self.state.remove_resource(action.resource_name)

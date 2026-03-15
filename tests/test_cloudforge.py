@@ -23,6 +23,14 @@ from resources.vm import VMResource
 from resources.network import VPCResource, SubnetResource, SecurityGroupResource
 from resources.kubernetes import KubernetesResource
 from resources.database import DatabaseResource
+from resources.cloud_run import CloudRunResource
+from resources.firebase import (
+    FirebaseAuthResource,
+    FirestoreResource,
+    FirebaseRealtimeDBResource,
+    FirebaseHostingResource,
+)
+from resources.dns import DNSRecordResource
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -673,3 +681,464 @@ class TestIntegration:
         assert len(diff["create"]) == 3  # Sem a VPC
         assert len(diff["unchanged"]) == 1
         assert diff["unchanged"][0]["name"] == "test-vpc"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: CloudRunResource
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestCloudRunResource:
+    def test_valid_config(self):
+        cr = CloudRunResource(
+            name="api",
+            config={"image": "gcr.io/projeto/app:latest"},
+        )
+        assert cr.validate() == []
+
+    def test_missing_image(self):
+        cr = CloudRunResource(name="api", config={})
+        errors = cr.validate()
+        assert any("image" in e for e in errors)
+
+    def test_invalid_cpu(self):
+        cr = CloudRunResource(
+            name="api",
+            config={"image": "gcr.io/p/a", "cpu": "16"},
+        )
+        errors = cr.validate()
+        assert any("cpu" in e for e in errors)
+
+    def test_invalid_memory(self):
+        cr = CloudRunResource(
+            name="api",
+            config={"image": "gcr.io/p/a", "memory": "500MB"},
+        )
+        errors = cr.validate()
+        assert any("memory" in e for e in errors)
+
+    def test_min_greater_than_max_instances(self):
+        cr = CloudRunResource(
+            name="api",
+            config={"image": "gcr.io/p/a", "min_instances": 10, "max_instances": 5},
+        )
+        errors = cr.validate()
+        assert any("min_instances" in e for e in errors)
+
+    def test_invalid_timeout(self):
+        cr = CloudRunResource(
+            name="api",
+            config={"image": "gcr.io/p/a", "timeout_seconds": 9999},
+        )
+        errors = cr.validate()
+        assert any("timeout" in e for e in errors)
+
+    def test_invalid_ingress(self):
+        cr = CloudRunResource(
+            name="api",
+            config={"image": "gcr.io/p/a", "ingress": "public"},
+        )
+        errors = cr.validate()
+        assert any("ingress" in e for e in errors)
+
+    def test_defaults(self):
+        cr = CloudRunResource(name="api", config={})
+        defaults = cr.get_defaults()
+        assert defaults["cpu"] == "1"
+        assert defaults["memory"] == "512Mi"
+        assert defaults["min_instances"] == 0
+        assert defaults["max_instances"] == 100
+        assert defaults["execution_environment"] == "gen2"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: FirebaseAuthResource
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestFirebaseAuthResource:
+    def test_valid_config(self):
+        auth = FirebaseAuthResource(
+            name="auth",
+            config={"providers": ["email", "google"]},
+        )
+        assert auth.validate() == []
+
+    def test_invalid_provider(self):
+        auth = FirebaseAuthResource(
+            name="auth",
+            config={"providers": ["email", "steam"]},
+        )
+        errors = auth.validate()
+        assert any("steam" in e for e in errors)
+
+    def test_invalid_password_policy(self):
+        auth = FirebaseAuthResource(
+            name="auth",
+            config={"password_policy": {"min_length": 3}},
+        )
+        errors = auth.validate()
+        assert any("min_length" in e for e in errors)
+
+    def test_oauth_provider_without_config(self):
+        auth = FirebaseAuthResource(
+            name="auth",
+            config={"providers": ["facebook"]},
+        )
+        errors = auth.validate()
+        assert any("facebook" in e and "OAuth" in e for e in errors)
+
+    def test_google_no_oauth_needed(self):
+        """Google é automático no Firebase, não precisa de OAuth config."""
+        auth = FirebaseAuthResource(
+            name="auth",
+            config={"providers": ["google"]},
+        )
+        assert auth.validate() == []
+
+    def test_defaults(self):
+        auth = FirebaseAuthResource(name="auth", config={})
+        defaults = auth.get_defaults()
+        assert "email" in defaults["providers"]
+        assert "google" in defaults["providers"]
+        assert defaults["email_password_enabled"] is True
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: FirestoreResource
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestFirestoreResource:
+    def test_valid_config(self):
+        fs = FirestoreResource(
+            name="main-db",
+            config={"mode": "native", "location": "us-central1"},
+        )
+        assert fs.validate() == []
+
+    def test_invalid_mode(self):
+        fs = FirestoreResource(
+            name="db", config={"mode": "graph"}
+        )
+        errors = fs.validate()
+        assert any("mode" in e for e in errors)
+
+    def test_invalid_rules_type(self):
+        fs = FirestoreResource(
+            name="db", config={"security_rules": 12345}
+        )
+        errors = fs.validate()
+        assert any("security_rules" in e for e in errors)
+
+    def test_index_missing_collection(self):
+        fs = FirestoreResource(
+            name="db",
+            config={"indexes": [{"fields": [{"field": "name"}]}]},
+        )
+        errors = fs.validate()
+        assert any("collection" in e for e in errors)
+
+    def test_index_missing_fields(self):
+        fs = FirestoreResource(
+            name="db",
+            config={"indexes": [{"collection": "users"}]},
+        )
+        errors = fs.validate()
+        assert any("fields" in e for e in errors)
+
+    def test_valid_inline_rules(self):
+        fs = FirestoreResource(
+            name="db",
+            config={
+                "security_rules": "rules_version = '2'; service cloud.firestore { ... }",
+            },
+        )
+        assert fs.validate() == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: FirebaseRealtimeDBResource
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestFirebaseRealtimeDBResource:
+    def test_valid_config(self):
+        rtdb = FirebaseRealtimeDBResource(
+            name="main-rtdb",
+            config={"type": "DEFAULT_DATABASE"},
+        )
+        assert rtdb.validate() == []
+
+    def test_invalid_type(self):
+        rtdb = FirebaseRealtimeDBResource(
+            name="rtdb", config={"type": "CUSTOM_DB"}
+        )
+        errors = rtdb.validate()
+        assert any("type" in e for e in errors)
+
+    def test_valid_with_rules(self):
+        rtdb = FirebaseRealtimeDBResource(
+            name="rtdb",
+            config={
+                "security_rules": '{"rules": {".read": false, ".write": false}}',
+            },
+        )
+        assert rtdb.validate() == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: FirebaseHostingResource
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestFirebaseHostingResource:
+    def test_valid_config(self):
+        hosting = FirebaseHostingResource(
+            name="site",
+            config={"site_id": "my-app"},
+        )
+        assert hosting.validate() == []
+
+    def test_missing_site_id_when_not_default(self):
+        hosting = FirebaseHostingResource(
+            name="site",
+            config={"use_default_site": False},
+        )
+        errors = hosting.validate()
+        assert any("site_id" in e for e in errors)
+
+    def test_rewrite_missing_source(self):
+        hosting = FirebaseHostingResource(
+            name="site",
+            config={"rewrites": [{"destination": "/index.html"}]},
+        )
+        errors = hosting.validate()
+        assert any("source" in e for e in errors)
+
+    def test_rewrite_missing_destination(self):
+        hosting = FirebaseHostingResource(
+            name="site",
+            config={"rewrites": [{"source": "**"}]},
+        )
+        errors = hosting.validate()
+        assert any("destination" in e or "function" in e or "run" in e for e in errors)
+
+    def test_valid_with_custom_domain(self):
+        hosting = FirebaseHostingResource(
+            name="site",
+            config={
+                "site_id": "my-app",
+                "custom_domain": "app.example.com",
+            },
+        )
+        assert hosting.validate() == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: DNSRecordResource
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestDNSRecordResource:
+    def test_valid_cname(self):
+        dns = DNSRecordResource(
+            name="app-cname",
+            config={
+                "domain": "example.com",
+                "record_name": "app",
+                "record_type": "CNAME",
+                "record_value": "myapp.web.app",
+            },
+        )
+        assert dns.validate() == []
+
+    def test_missing_domain(self):
+        dns = DNSRecordResource(
+            name="dns",
+            config={"record_name": "app", "record_value": "x.y.z"},
+        )
+        errors = dns.validate()
+        assert any("domain" in e for e in errors)
+
+    def test_missing_record_name(self):
+        dns = DNSRecordResource(
+            name="dns",
+            config={"domain": "example.com", "record_value": "x.y.z"},
+        )
+        errors = dns.validate()
+        assert any("record_name" in e for e in errors)
+
+    def test_missing_record_value(self):
+        dns = DNSRecordResource(
+            name="dns",
+            config={"domain": "example.com", "record_name": "app"},
+        )
+        errors = dns.validate()
+        assert any("record_value" in e for e in errors)
+
+    def test_invalid_record_type(self):
+        dns = DNSRecordResource(
+            name="dns",
+            config={
+                "domain": "example.com",
+                "record_name": "app",
+                "record_value": "1.2.3.4",
+                "record_type": "PTR",
+            },
+        )
+        errors = dns.validate()
+        assert any("record_type" in e for e in errors)
+
+    def test_cname_on_root(self):
+        dns = DNSRecordResource(
+            name="dns",
+            config={
+                "domain": "example.com",
+                "record_name": "@",
+                "record_type": "CNAME",
+                "record_value": "x.y.z",
+            },
+        )
+        errors = dns.validate()
+        assert any("CNAME" in e and "raiz" in e for e in errors)
+
+    def test_mx_without_priority(self):
+        dns = DNSRecordResource(
+            name="dns",
+            config={
+                "domain": "example.com",
+                "record_name": "mail",
+                "record_type": "MX",
+                "record_value": "mail.example.com",
+            },
+        )
+        errors = dns.validate()
+        assert any("priority" in e for e in errors)
+
+    def test_ttl_too_low(self):
+        dns = DNSRecordResource(
+            name="dns",
+            config={
+                "domain": "example.com",
+                "record_name": "app",
+                "record_value": "x.y.z",
+                "ttl": 60,
+            },
+        )
+        errors = dns.validate()
+        assert any("ttl" in e for e in errors)
+
+    def test_valid_a_record(self):
+        dns = DNSRecordResource(
+            name="dns",
+            config={
+                "domain": "example.com",
+                "record_name": "www",
+                "record_type": "A",
+                "record_value": "34.107.123.45",
+            },
+        )
+        assert dns.validate() == []
+
+    def test_valid_txt_record(self):
+        dns = DNSRecordResource(
+            name="dns",
+            config={
+                "domain": "example.com",
+                "record_name": "_firebase",
+                "record_type": "TXT",
+                "record_value": "my-app-verification",
+            },
+        )
+        assert dns.validate() == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Testes: Config com novos tipos de recurso
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestConfigNewResources:
+    def test_cloud_run_in_config(self, tmp_path):
+        data = {
+            "project": {"name": "test"},
+            "provider": {"name": "gcp", "region": "us-central1"},
+            "resources": [
+                {
+                    "type": "cloud_run",
+                    "name": "api",
+                    "config": {"image": "gcr.io/p/a:latest"},
+                },
+            ],
+        }
+        cfg_path = tmp_path / "cr.yaml"
+        with open(cfg_path, "w") as f:
+            yaml.dump(data, f)
+        config = Config(str(cfg_path))
+        result = config.load()
+        assert result["resources"][0]["type"] == "cloud_run"
+
+    def test_firebase_resources_in_config(self, tmp_path):
+        data = {
+            "project": {"name": "test"},
+            "provider": {"name": "gcp", "region": "us-central1"},
+            "resources": [
+                {
+                    "type": "firebase_auth",
+                    "name": "auth",
+                    "config": {"providers": ["email"]},
+                },
+                {
+                    "type": "firestore",
+                    "name": "db",
+                    "config": {"mode": "native"},
+                },
+                {
+                    "type": "firebase_rtdb",
+                    "name": "rtdb",
+                    "config": {"type": "DEFAULT_DATABASE"},
+                },
+                {
+                    "type": "firebase_hosting",
+                    "name": "hosting",
+                    "config": {"site_id": "my-app"},
+                },
+            ],
+        }
+        cfg_path = tmp_path / "fb.yaml"
+        with open(cfg_path, "w") as f:
+            yaml.dump(data, f)
+        config = Config(str(cfg_path))
+        result = config.load()
+        assert len(result["resources"]) == 4
+
+    def test_dns_record_in_config(self, tmp_path):
+        data = {
+            "project": {"name": "test"},
+            "provider": {"name": "gcp", "region": "us-central1"},
+            "external_providers": {
+                "godaddy": {
+                    "api_key": "test",
+                    "api_secret": "test",
+                },
+            },
+            "resources": [
+                {
+                    "type": "dns_record",
+                    "name": "cname",
+                    "config": {
+                        "domain": "example.com",
+                        "record_name": "app",
+                        "record_value": "x.web.app",
+                    },
+                },
+            ],
+        }
+        cfg_path = tmp_path / "dns.yaml"
+        with open(cfg_path, "w") as f:
+            yaml.dump(data, f)
+        config = Config(str(cfg_path))
+        result = config.load()
+        assert result["resources"][0]["type"] == "dns_record"
+        assert "godaddy" in result["external_providers"]
