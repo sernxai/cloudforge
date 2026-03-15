@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich import box
+from rich.text import Text
 
 
 console = Console()
@@ -62,95 +63,252 @@ def init(provider: str, region: str):
 
 
 @cli.command()
-def providers():
-    """Lista todos os providers disponíveis e seus parâmetros."""
+@click.argument("provider_name", required=False)
+def providers(provider_name: str | None):
+    """Lista todos os providers disponíveis ou mostra detalhes de um provider específico.
+    
+    Exemplos:
+        cloudforge providers          # Lista todos os providers
+        cloudforge providers aws      # Detalhes da AWS
+        cloudforge providers oracle   # Detalhes do Oracle Cloud
+        cloudforge providers locaweb  # Detalhes da Locaweb
+    """
     console.print(BANNER)
-    
-    from cloudforge.core.engine import PROVIDER_REGISTRY
-    
+
+    from cloudforge.core.engine import PROVIDER_REGISTRY, get_provider
+    import sys
+
+    # Configurar encoding para UTF-8 no Windows
+    if sys.platform == 'win32':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except AttributeError:
+            import io
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+    # Se provider_name for especificado, mostrar detalhes
+    if provider_name:
+        if provider_name not in PROVIDER_REGISTRY:
+            console.print(f"[red]✗ Provider '{provider_name}' não encontrado.[/red]")
+            console.print("\nProviders disponíveis:")
+            for name in PROVIDER_REGISTRY.keys():
+                console.print(f"  • {name}")
+            return
+        
+        _show_provider_details(provider_name, PROVIDER_REGISTRY, get_provider)
+        return
+
+    # Lista completa de providers
     table = Table(
-        title="☁️  CloudForge Providers Disponíveis",
+        title="CloudForge Providers Disponíveis",
         box=box.ROUNDED,
         show_header=True,
         header_style="bold cyan",
+        show_lines=True,
     )
-    table.add_column("Provider", style="bold green")
-    table.add_column("Nome Interno")
-    table.add_column("Regiões")
-    table.add_column("Recursos Suportados")
-    table.add_column("Instalação")
-    
+    table.add_column("Provider", style="bold green", width=25)
+    table.add_column("Nome", width=12)
+    table.add_column("Regioes", width=8)
+    table.add_column("Recursos", width=40)
+
     for provider_name, provider_info in PROVIDER_REGISTRY.items():
         try:
             # Instanciar provider para obter informações
-            if provider_name == "aws":
-                from cloudforge.providers.aws.provider import AWSProvider
-                p = AWSProvider("us-east-1", {})
-            elif provider_name == "gcp":
-                from cloudforge.providers.gcp.provider import GCPProvider
-                p = GCPProvider("us-central1", {})
-            elif provider_name == "azure":
-                from cloudforge.providers.azure.provider import AzureProvider
-                p = AzureProvider("eastus", {})
-            elif provider_name == "alibaba":
-                from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
-                p = AlibabaCloudProvider("cn-hangzhou", {})
-            elif provider_name == "godaddy":
-                from cloudforge.providers.godaddy.provider import GoDaddyProvider
-                p = GoDaddyProvider("global", {})
-            elif provider_name == "cloudflare":
-                from cloudforge.providers.cloudflare.provider import CloudflareProvider
-                p = CloudflareProvider("global", {})
-            else:
-                continue
+            p = _instantiate_provider(provider_name)
             
             regions = len(p.list_regions())
             resources = provider_info.get("resources", [])
-            install_cmd = provider_info.get("install", "pip install cloudforge")
-            
+
             table.add_row(
                 provider_info.get("display_name", provider_name),
                 f"[dim]{provider_name}[/dim]",
-                f"{regions} regiões",
-                ", ".join(resources[:5]) + ("..." if len(resources) > 5 else ""),
-                f"[cyan]{install_cmd}[/cyan]",
+                str(regions),
+                Text(", ".join(resources), style="cyan"),
             )
         except Exception as e:
             table.add_row(
                 provider_info.get("display_name", provider_name),
                 f"[dim]{provider_name}[/dim]",
+                "N/A",
                 "[yellow]N/A[/yellow]",
-                "[yellow]N/A[/yellow]",
-                f"[dim]{provider_info.get('install', 'N/A')}[/dim]",
             )
-    
+
     console.print(table)
-    
-    # Detalhar recursos por provider
-    console.print("\n[bold]📦 Recursos por Provider:[/bold]\n")
-    
-    for provider_name, provider_info in PROVIDER_REGISTRY.items():
-        resources = provider_info.get("resources", [])
-        if resources:
-            console.print(f"[green]{provider_info.get('display_name', provider_name)}:[/green]")
-            for res in resources:
-                console.print(f"  • {res}")
-            console.print()
-    
+
     # Dicas de uso
+    console.print()
+    console.print("[bold]Use 'cloudforge providers <nome>' para ver detalhes de um provider específico[/bold]\n")
+    
+    dicas_text = Text()
+    dicas_text.append("Exemplos:\n", style="bold")
+    dicas_text.append("  cloudforge providers aws          # AWS\n")
+    dicas_text.append("  cloudforge providers oracle       # Oracle Cloud\n")
+    dicas_text.append("  cloudforge providers locaweb      # Locaweb\n")
+    dicas_text.append("  cloudforge providers digitalocean # DigitalOcean\n")
+    
     console.print(
         Panel(
-            "[bold]💡 Dicas de uso:[/bold]\n\n"
-            "1. Instale apenas os providers que você vai usar:\n"
-            "   [cyan]pip install cloudforge[aws][/cyan]  # Apenas AWS\n"
-            "   [cyan]pip install cloudforge[gcp][/cyan]  # Apenas GCP\n"
-            "   [cyan]pip install cloudforge[alibaba][/cyan]  # Apenas Alibaba\n\n"
-            "2. Para instalar todos os providers:\n"
-            "   [cyan]pip install cloudforge[all][/cyan]\n\n"
-            "3. Inicialize um projeto com o provider desejado:\n"
-            "   [cyan]cloudforge init --provider alibaba --region cn-hangzhou[/cyan]",
-            title="📚 Como Usar",
+            dicas_text,
+            title="Como Usar",
             border_style="blue",
+        )
+    )
+
+
+def _instantiate_provider(provider_name: str):
+    """Instancia um provider pelo nome."""
+    if provider_name == "aws":
+        from cloudforge.providers.aws.provider import AWSProvider
+        return AWSProvider("us-east-1", {})
+    elif provider_name == "gcp":
+        from cloudforge.providers.gcp.provider import GCPProvider
+        return GCPProvider("us-central1", {})
+    elif provider_name == "azure":
+        from cloudforge.providers.azure.provider import AzureProvider
+        return AzureProvider("eastus", {})
+    elif provider_name == "alibaba":
+        from cloudforge.providers.alibaba.provider import AlibabaCloudProvider
+        return AlibabaCloudProvider("cn-hangzhou", {})
+    elif provider_name == "oracle":
+        from cloudforge.providers.oracle.provider import OracleCloudProvider
+        return OracleCloudProvider("sa-saopaulo-1", {})
+    elif provider_name == "digitalocean":
+        from cloudforge.providers.digitalocean.provider import DigitalOceanProvider
+        return DigitalOceanProvider("nyc3", {})
+    elif provider_name == "hetzner":
+        from cloudforge.providers.hetzner.provider import HetznerProvider
+        return HetznerProvider("eu-central", {})
+    elif provider_name == "hostinger":
+        from cloudforge.providers.hostinger.provider import HostingerProvider
+        return HostingerProvider("br", {})
+    elif provider_name == "locaweb":
+        from cloudforge.providers.locaweb.provider import LocawebProvider
+        return LocawebProvider("br-sudeste", {})
+    elif provider_name == "godaddy":
+        from cloudforge.providers.godaddy.provider import GoDaddyProvider
+        return GoDaddyProvider("global", {})
+    elif provider_name == "cloudflare":
+        from cloudforge.providers.cloudflare.provider import CloudflareProvider
+        return CloudflareProvider("global", {})
+    else:
+        raise ValueError(f"Provider desconhecido: {provider_name}")
+
+
+def _show_provider_details(provider_name: str, PROVIDER_REGISTRY: dict, get_provider_func):
+    """Mostra detalhes completos de um provider específico."""
+    provider_info = PROVIDER_REGISTRY.get(provider_name)
+    if not provider_info:
+        console.print(f"[red]Provider '{provider_name}' não encontrado.[/red]")
+        return
+
+    try:
+        p = _instantiate_provider(provider_name)
+        regions_list = p.list_regions()
+        resources = provider_info.get("resources", [])
+        deps = provider_info.get("dependencies", [])
+    except Exception as e:
+        console.print(f"[red]Erro ao carregar provider: {e}[/red]")
+        return
+
+    # Cabeçalho
+    display_name = provider_info.get("display_name", provider_name)
+    description = provider_info.get("description", "")
+    
+    console.print(f"\n[bold green]{'='*60}[/bold green]")
+    console.print(f"[bold green]{display_name}[/bold green]")
+    console.print(f"[bold green]{'='*60}[/bold green]\n")
+    
+    # Informações básicas
+    info_table = Table(box=box.SIMPLE, show_header=False)
+    info_table.add_column("Chave", style="bold cyan")
+    info_table.add_column("Valor")
+    
+    info_table.add_row("Nome Interno:", provider_name)
+    info_table.add_row("Descricao:", description)
+    info_table.add_row("Total Regioes:", f"[green]{len(regions_list)}[/green]")
+    info_table.add_row("Total Recursos:", f"[green]{len(resources)}[/green]")
+    
+    console.print(info_table)
+    console.print()
+    
+    # Regiões
+    console.print("[bold]Regioes Disponíveis:[/bold]")
+    # Agrupar regiões por continente/região geográfica
+    region_groups = {}
+    for region in regions_list:
+        prefix = region.split("-")[0]
+        if prefix not in region_groups:
+            region_groups[prefix] = []
+        region_groups[prefix].append(region)
+    
+    region_labels = {
+        "us": "Estados Unidos",
+        "eu": "Europa",
+        "ap": "Asia-Pacifico",
+        "sa": "America do Sul",
+        "ca": "Canada",
+        "me": "Oriente Medio",
+        "af": "Africa",
+        "cn": "China",
+    }
+    
+    for prefix, regions in sorted(region_groups.items()):
+        label = region_labels.get(prefix, prefix.upper())
+        console.print(f"\n  [bold cyan]{label}:[/bold cyan]")
+        for region in sorted(regions):
+            console.print(f"    • {region}")
+    
+    console.print()
+    
+    # Recursos
+    console.print("[bold]Recursos Suportados:[/bold]")
+    resource_descriptions = {
+        "vm": "Maquinas Virtuais (Compute)",
+        "vpc": "Rede Virtual (VPC/VNet)",
+        "subnet": "Sub-redes",
+        "security_group": "Firewall / Security Group",
+        "kubernetes": "Kubernetes Gerenciado",
+        "database": "Banco de Dados Gerenciado",
+        "cloud_run": "Container Serverless",
+        "firebase_auth": "Autenticacao Firebase",
+        "firestore": "Cloud Firestore (NoSQL)",
+        "firebase_rtdb": "Firebase Realtime Database",
+        "firebase_hosting": "Hospedagem Firebase",
+        "slb": "Load Balancer",
+        "lb": "Load Balancer",
+        "website": "Hospedagem de Sites",
+        "dns_record": "Registros DNS",
+    }
+    
+    for resource in resources:
+        desc = resource_descriptions.get(resource, "")
+        console.print(f"  [green]✓[/green] {resource:20} [dim]{desc}[/dim]")
+    
+    console.print()
+    
+    # Dependências
+    console.print("[bold]Dependencias:[/bold]")
+    if deps:
+        for dep in deps:
+            console.print(f"  • {dep}")
+    else:
+        console.print("  [dim]Nenhuma dependencia adicional (usa core)[/dim]")
+    
+    console.print()
+    
+    # Comandos úteis
+    console.print("[bold]Comandos Úteis:[/bold]")
+    console.print(f"  [cyan]cloudforge init --provider {provider_name} --region {regions_list[0]}[/cyan]")
+    console.print(f"  [cyan]cloudforge install-deps {provider_name}[/cyan]")
+    console.print()
+    
+    console.print(
+        Panel(
+            f"[green]Para inicializar um projeto com {display_name}:[/green]\n\n"
+            f"[cyan]cloudforge init --provider {provider_name} --region {regions_list[0]}[/cyan]\n\n"
+            f"[dim]Região sugerida: {regions_list[0]}[/dim]",
+            title=f"Iniciar com {display_name}",
+            border_style="green",
         )
     )
 
@@ -165,13 +323,18 @@ def providers():
 )
 def install_deps(provider_name: str | None, upgrade: bool):
     """Instala dependências de um provider específico.
-    
+
     Se nenhum provider for especificado, lista as opções disponíveis.
-    
+
     Exemplos:
         cloudforge install-deps aws       # Instala dependências da AWS
         cloudforge install-deps gcp       # Instala dependências do GCP
         cloudforge install-deps alibaba   # Instala dependências do Alibaba
+        cloudforge install-deps oracle    # Instala dependências do Oracle
+        cloudforge install-deps digitalocean
+        cloudforge install-deps hetzner
+        cloudforge install-deps hostinger
+        cloudforge install-deps locaweb
         cloudforge install-deps           # Lista providers disponíveis
     """
     from cloudforge.core.engine import PROVIDER_REGISTRY

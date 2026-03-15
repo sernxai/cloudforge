@@ -1,10 +1,10 @@
 Metadata-Version: 2.4
 Name: cloudforge
 Version: 1.0.0
-Summary: Infrastructure as Code em Python — multi-cloud (AWS, GCP, Azure, Alibaba)
+Summary: Infrastructure as Code em Python — multi-cloud (AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean, Hetzner, Hostinger, Locaweb)
 Author: CloudForge Team
 License: Apache-2.0
-Keywords: iac infrastructure terraform cloud aws gcp azure alibaba
+Keywords: iac infrastructure terraform cloud aws gcp azure alibaba oracle digitalocean hetzner hostinger locaweb
 Classifier: Development Status :: 4 - Beta
 Classifier: Intended Audience :: Developers
 Classifier: Topic :: System :: Systems Administration
@@ -46,6 +46,12 @@ Requires-Dist: alibabacloud_vpc20160428>=2.0.0; extra == "alibaba"
 Requires-Dist: alibabacloud_slb20140515>=2.0.0; extra == "alibaba"
 Requires-Dist: alibabacloud_tea_openapi>=0.3.0; extra == "alibaba"
 Requires-Dist: alibabacloud_credentials>=0.3.0; extra == "alibaba"
+Provides-Extra: oracle
+Requires-Dist: oci>=2.100.0; extra == "oracle"
+Provides-Extra: digitalocean
+Provides-Extra: hetzner
+Provides-Extra: hostinger
+Provides-Extra: locaweb
 Provides-Extra: dns
 Provides-Extra: all
 Requires-Dist: boto3>=1.34.0; extra == "all"
@@ -66,6 +72,7 @@ Requires-Dist: alibabacloud_vpc20160428>=2.0.0; extra == "all"
 Requires-Dist: alibabacloud_slb20140515>=2.0.0; extra == "all"
 Requires-Dist: alibabacloud_tea_openapi>=0.3.0; extra == "all"
 Requires-Dist: alibabacloud_credentials>=0.3.0; extra == "all"
+Requires-Dist: oci>=2.100.0; extra == "all"
 Dynamic: author
 Dynamic: classifier
 Dynamic: description
