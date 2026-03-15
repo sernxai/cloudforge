@@ -1,2 +1,2 @@
 [console_scripts]
-cloudforge = cli:cli
+cloudforge = cloudforge.cli:cli

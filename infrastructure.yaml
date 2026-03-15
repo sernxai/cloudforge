@@ -1,0 +1,22 @@
+project:
+  environment: development
+  name: meu-projeto
+  tags:
+    managed_by: cloudforge
+provider:
+  credentials: {}
+  name: gcp
+  region: southamerica-east1
+resources:
+- config:
+    cidr_block: 10.0.0.0/16
+  name: main-vpc
+  type: vpc
+- config:
+    cidr_block: 10.0.1.0/24
+    public: true
+    vpc: main-vpc
+  depends_on:
+  - main-vpc
+  name: public-subnet
+  type: subnet

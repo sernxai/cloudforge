@@ -1,0 +1,157 @@
+# ============================================================================
+# CloudForge — Exemplo de Infraestrutura Completa
+# ============================================================================
+# Este arquivo define toda a infraestrutura necessária para uma aplicação
+# containerizada com banco de dados gerenciado.
+#
+# Uso:
+#   cloudforge validate            # Validar configuração
+#   cloudforge plan                # Ver mudanças planejadas
+#   cloudforge apply               # Aplicar infraestrutura
+#   cloudforge deploy -i app:v1    # Deploy do container
+# ============================================================================
+
+project:
+  name: minha-aplicacao
+  environment: production
+  tags:
+    team: engineering
+    cost_center: platform
+    managed_by: cloudforge
+
+# ── Provider ─────────────────────────────────────────────────────────────────
+# Troque para "gcp" ou "azure" conforme necessário.
+# Credenciais podem usar variáveis de ambiente: ${AWS_PROFILE}
+provider:
+  name: aws
+  region: us-east-1
+  credentials:
+    profile: default
+    # Para GCP:
+    # project_id: meu-projeto-gcp
+    # service_account_key: /path/to/key.json
+    # Para Azure:
+    # subscription_id: xxx-xxx-xxx
+    # resource_group: meu-rg
+
+# ── Recursos de Infraestrutura ───────────────────────────────────────────────
+resources:
+  # ── Rede ────────────────────────────────────────────────────────────────
+  - type: vpc
+    name: main-vpc
+    config:
+      cidr_block: "10.0.0.0/16"
+      enable_dns_support: true
+      enable_dns_hostnames: true
+
+  - type: subnet
+    name: public-subnet-a
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      cidr_block: "10.0.1.0/24"
+      availability_zone: us-east-1a
+      public: true
+
+  - type: subnet
+    name: public-subnet-b
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      cidr_block: "10.0.2.0/24"
+      availability_zone: us-east-1b
+      public: true
+
+  - type: subnet
+    name: private-subnet-a
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      cidr_block: "10.0.10.0/24"
+      availability_zone: us-east-1a
+      public: false
+
+  - type: security_group
+    name: app-sg
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      description: "Security group para a aplicação"
+      ingress:
+        - port: 80
+          protocol: tcp
+          cidr: "0.0.0.0/0"
+        - port: 443
+          protocol: tcp
+          cidr: "0.0.0.0/0"
+        - port: 8080
+          protocol: tcp
+          cidr: "10.0.0.0/16"
+      egress:
+        - protocol: "-1"
+          cidr: "0.0.0.0/0"
+
+  - type: security_group
+    name: db-sg
+    depends_on: [main-vpc]
+    config:
+      vpc: main-vpc
+      description: "Security group para o banco de dados"
+      ingress:
+        - port: 5432
+          protocol: tcp
+          cidr: "10.0.0.0/16"
+
+  # ── Kubernetes ──────────────────────────────────────────────────────────
+  - type: kubernetes
+    name: app-cluster
+    depends_on: [public-subnet-a, public-subnet-b, app-sg]
+    config:
+      node_count: 3
+      node_type: medium          # Mapeado automaticamente para o provider
+      kubernetes_version: "1.29"
+      min_nodes: 2
+      max_nodes: 8
+      auto_scaling: true
+      disk_size_gb: 50
+      tags:
+        environment: production
+
+  # ── Banco de Dados ─────────────────────────────────────────────────────
+  - type: database
+    name: app-database
+    depends_on: [private-subnet-a, db-sg]
+    config:
+      engine: postgresql
+      version: "15"
+      instance_type: medium      # Mapeado automaticamente para o provider
+      storage_gb: 100
+      multi_az: true
+      backup_retention_days: 14
+      publicly_accessible: false
+      storage_encrypted: true
+      master_username: app_admin
+      database_name: app_production
+      tags:
+        environment: production
+        backup: enabled
+
+# ── Deploy Docker ────────────────────────────────────────────────────────────
+deploy:
+  type: docker
+  image: myapp:latest
+  target: app-cluster
+  replicas: 3
+  port: 8080
+  namespace: production
+  env:
+    DATABASE_HOST: "${app-database.endpoint}"
+    DATABASE_PORT: "5432"
+    DATABASE_NAME: app_production
+    NODE_ENV: production
+    LOG_LEVEL: info
+  resources:
+    cpu_request: "200m"
+    memory_request: "256Mi"
+    cpu_limit: "1000m"
+    memory_limit: "1Gi"

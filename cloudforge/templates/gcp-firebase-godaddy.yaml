@@ -1,0 +1,398 @@
+# ============================================================================
+# CloudForge — Infraestrutura Completa GCP + Firebase + GoDaddy DNS
+# ============================================================================
+#
+# Este template provisiona:
+#   1. Rede (VPC + Subnet)
+#   2. Cloud Run (container serverless)
+#   3. Firebase Authentication (email + Google + phone)
+#   4. Cloud Firestore (banco NoSQL)
+#   5. Firebase Realtime Database
+#   6. Firebase Hosting (SPA/frontend)
+#   7. DNS CNAME no GoDaddy apontando para o app
+#
+# ============================================================================
+# PRÉ-REQUISITOS:
+#
+#   1. GCP — Instalar e autenticar:
+#      $ gcloud auth application-default login
+#      $ gcloud config set project SEU_PROJECT_ID
+#
+#   2. Firebase — Habilitar no console:
+#      https://console.firebase.google.com → Adicionar projeto (usar mesmo GCP project)
+#
+#   3. APIs GCP — Habilitar:
+#      $ gcloud services enable \
+#          run.googleapis.com \
+#          firestore.googleapis.com \
+#          firebasedatabase.googleapis.com \
+#          firebasehosting.googleapis.com \
+#          identitytoolkit.googleapis.com \
+#          artifactregistry.googleapis.com \
+#          cloudbuild.googleapis.com
+#
+#   4. GoDaddy — Obter API key:
+#      https://developer.godaddy.com/keys
+#
+#   5. Instalar dependências:
+#      $ pip install -r requirements.txt
+#
+# ============================================================================
+# USO:
+#
+#   $ cloudforge validate          # Verificar configuração
+#   $ cloudforge plan              # Preview das mudanças
+#   $ cloudforge apply             # Provisionar tudo
+#   $ cloudforge status            # Ver estado atual
+#   $ cloudforge destroy           # Destruir tudo
+#
+# ============================================================================
+
+project:
+  name: minha-app
+  environment: production
+  tags:
+    team: engineering
+    managed_by: cloudforge
+
+# ── Provider Principal (GCP) ─────────────────────────────────────────────────
+provider:
+  name: gcp
+  region: southamerica-east1          # São Paulo
+  credentials:
+    project_id: ${GCP_PROJECT_ID}     # Variável de ambiente ou valor direto
+    # service_account_key: /path/to/sa-key.json   # Alternativa ao ADC
+
+# ── Providers Externos ───────────────────────────────────────────────────────
+external_providers:
+  godaddy:
+    api_key: ${GODADDY_API_KEY}
+    api_secret: ${GODADDY_API_SECRET}
+    environment: production            # "ote" para sandbox/testes
+
+# ── Recursos ─────────────────────────────────────────────────────────────────
+resources:
+
+  # ┌──────────────────────────────────────────────────────────────────────────┐
+  # │  REDE                                                                    │
+  # └──────────────────────────────────────────────────────────────────────────┘
+
+  - type: vpc
+    name: app-network
+    config:
+      cidr_block: "10.0.0.0/16"
+
+  - type: subnet
+    name: app-subnet
+    depends_on: [app-network]
+    config:
+      vpc: app-network
+      cidr_block: "10.0.1.0/24"
+      public: true
+
+  # ┌──────────────────────────────────────────────────────────────────────────┐
+  # │  CLOUD RUN — Container serverless                                        │
+  # │                                                                          │
+  # │  Para fazer deploy da imagem:                                            │
+  # │  $ docker build -t southamerica-east1-docker.pkg.dev/PROJECT/repo/app .  │
+  # │  $ docker push southamerica-east1-docker.pkg.dev/PROJECT/repo/app        │
+  # │  $ cloudforge apply                                                      │
+  # └──────────────────────────────────────────────────────────────────────────┘
+
+  - type: cloud_run
+    name: api-backend
+    depends_on: [app-subnet]
+    config:
+      # Imagem Docker (Artifact Registry, GCR ou Docker Hub)
+      image: "southamerica-east1-docker.pkg.dev/${GCP_PROJECT_ID}/docker-repo/api-backend:latest"
+
+      # Recursos de computação
+      cpu: "1"                         # 1, 2, 4 ou 8 vCPUs
+      memory: "512Mi"                  # 128Mi a 32Gi
+
+      # Auto-scaling
+      min_instances: 0                 # 0 = scale-to-zero (economiza $$$)
+      max_instances: 10
+      concurrency: 80                  # Requisições simultâneas por instância
+
+      # Rede
+      port: 8080
+      allow_unauthenticated: true      # Acesso público (API pública)
+      ingress: "all"
+
+      # Performance
+      execution_environment: "gen2"    # gen2 = melhor performance
+      cpu_boost: true                  # CPU boost na inicialização
+      timeout_seconds: 300
+
+      # Variáveis de ambiente (referenciando outros recursos)
+      env:
+        NODE_ENV: "production"
+        FIRESTORE_PROJECT_ID: "${GCP_PROJECT_ID}"
+        FIREBASE_DB_URL: "${app-realtime-db.database_url}"
+        PORT: "8080"
+
+      # Secrets do Secret Manager (formato: projects/PROJECT/secrets/NAME/versions/latest)
+      # secrets:
+      #   DATABASE_PASSWORD: "projects/${GCP_PROJECT_ID}/secrets/db-password/versions/latest"
+
+      labels:
+        service: api-backend
+        environment: production
+
+  # ┌──────────────────────────────────────────────────────────────────────────┐
+  # │  FIREBASE AUTHENTICATION                                                 │
+  # │                                                                          │
+  # │  Configuração no frontend (firebase.js):                                 │
+  # │                                                                          │
+  # │  import { initializeApp } from 'firebase/app';                           │
+  # │  import { getAuth, GoogleAuthProvider } from 'firebase/auth';            │
+  # │                                                                          │
+  # │  const app = initializeApp({                                             │
+  # │    apiKey: "SUA_API_KEY",                                                │
+  # │    authDomain: "PROJECT_ID.firebaseapp.com",                             │
+  # │    projectId: "PROJECT_ID",                                              │
+  # │  });                                                                     │
+  # │  const auth = getAuth(app);                                              │
+  # └──────────────────────────────────────────────────────────────────────────┘
+
+  - type: firebase_auth
+    name: app-auth
+    config:
+      # Providers de autenticação habilitados
+      providers:
+        - email       # Email/senha
+        - google      # Login com Google (automático no GCP)
+        - phone       # SMS (requer billing ativo)
+        - anonymous   # Usuários anônimos
+
+      # Configuração de email
+      email_password_enabled: true
+      email_link_enabled: false        # Magic link (passwordless)
+
+      # MFA (autenticação multifator)
+      multi_factor_auth: false
+
+      # Política de senha
+      password_policy:
+        min_length: 8
+        require_uppercase: true
+        require_lowercase: true
+        require_numeric: true
+        require_special: false
+
+      # Domínios autorizados para OAuth redirect
+      authorized_domains:
+        - "minha-app.web.app"
+        - "app.meudominio.com.br"
+        - "localhost"
+
+      # OAuth para providers que precisam de client_id
+      # (Google é automático no Firebase — só listar os demais)
+      # oauth:
+      #   facebook:
+      #     client_id: "seu_facebook_app_id"
+      #     client_secret: "${FACEBOOK_CLIENT_SECRET}"
+      #   github:
+      #     client_id: "seu_github_client_id"
+      #     client_secret: "${GITHUB_CLIENT_SECRET}"
+
+  # ┌──────────────────────────────────────────────────────────────────────────┐
+  # │  CLOUD FIRESTORE                                                         │
+  # │                                                                          │
+  # │  Uso no backend (Python):                                                │
+  # │  from google.cloud import firestore                                      │
+  # │  db = firestore.Client()                                                 │
+  # │  doc = db.collection('users').document('uid').get()                      │
+  # │                                                                          │
+  # │  Uso no frontend (JS):                                                   │
+  # │  import { getFirestore, doc, getDoc } from 'firebase/firestore';         │
+  # │  const db = getFirestore(app);                                           │
+  # └──────────────────────────────────────────────────────────────────────────┘
+
+  - type: firestore
+    name: app-firestore
+    depends_on: [app-auth]
+    config:
+      mode: native                     # native (Firestore) ou datastore (legado)
+      location: southamerica-east1
+      delete_protection: true          # Proteger contra deleção acidental
+      point_in_time_recovery: true     # Recuperação point-in-time
+
+      # Security rules (inline ou caminho de arquivo)
+      security_rules: |
+        rules_version = '2';
+        service cloud.firestore {
+          match /databases/{database}/documents {
+            // Usuários podem ler/escrever seus próprios dados
+            match /users/{userId} {
+              allow read, write: if request.auth != null && request.auth.uid == userId;
+            }
+            // Dados públicos — leitura para todos, escrita autenticada
+            match /public/{document=**} {
+              allow read: if true;
+              allow write: if request.auth != null;
+            }
+            // Admin — apenas usuários com claim admin
+            match /admin/{document=**} {
+              allow read, write: if request.auth.token.admin == true;
+            }
+          }
+        }
+
+      # Índices compostos (para queries complexas)
+      indexes:
+        - collection: users
+          fields:
+            - field: created_at
+              order: DESCENDING
+            - field: status
+              order: ASCENDING
+        - collection: orders
+          fields:
+            - field: user_id
+              order: ASCENDING
+            - field: created_at
+              order: DESCENDING
+
+  # ┌──────────────────────────────────────────────────────────────────────────┐
+  # │  FIREBASE REALTIME DATABASE                                              │
+  # │                                                                          │
+  # │  Melhor para: chat, presença online, dados que mudam frequentemente.     │
+  # │                                                                          │
+  # │  Uso no frontend (JS):                                                   │
+  # │  import { getDatabase, ref, onValue } from 'firebase/database';          │
+  # │  const db = getDatabase(app);                                            │
+  # │  onValue(ref(db, 'chats/room1'), (snapshot) => { ... });                 │
+  # └──────────────────────────────────────────────────────────────────────────┘
+
+  - type: firebase_rtdb
+    name: app-realtime-db
+    depends_on: [app-auth]
+    config:
+      type: DEFAULT_DATABASE
+      location: southamerica-east1
+
+      # Security rules do RTDB
+      security_rules: |
+        {
+          "rules": {
+            "users": {
+              "$uid": {
+                ".read": "$uid === auth.uid",
+                ".write": "$uid === auth.uid"
+              }
+            },
+            "chats": {
+              "$room": {
+                ".read": "auth != null",
+                ".write": "auth != null",
+                "messages": {
+                  "$msg": {
+                    ".validate": "newData.hasChildren(['text', 'author', 'timestamp'])"
+                  }
+                }
+              }
+            },
+            "presence": {
+              "$uid": {
+                ".read": true,
+                ".write": "$uid === auth.uid"
+              }
+            }
+          }
+        }
+
+  # ┌──────────────────────────────────────────────────────────────────────────┐
+  # │  FIREBASE HOSTING                                                        │
+  # │                                                                          │
+  # │  Deploy do frontend (após cloudforge apply):                             │
+  # │  $ npm run build                                                         │
+  # │  $ firebase deploy --only hosting                                        │
+  # │                                                                          │
+  # │  Ou via CLI do firebase:                                                 │
+  # │  $ firebase init hosting                                                 │
+  # │  $ firebase deploy                                                       │
+  # └──────────────────────────────────────────────────────────────────────────┘
+
+  - type: firebase_hosting
+    name: app-hosting
+    depends_on: [api-backend, app-auth]
+    config:
+      site_id: minha-app               # URL: minha-app.web.app
+      use_default_site: true
+      public_dir: "dist"               # Diretório do build (dist, build, public)
+      single_page_app: true            # Rewrite para index.html (React/Vue/Angular)
+      clean_urls: true                 # Remove .html das URLs
+
+      # Domínio customizado (requer verificação DNS)
+      custom_domain: "app.meudominio.com.br"
+
+      # Rewrites — proxy para Cloud Run
+      rewrites:
+        - source: "/api/**"
+          run:
+            serviceId: api-backend
+            region: southamerica-east1
+
+      # Redirects
+      redirects:
+        - source: "/old-page"
+          destination: "/new-page"
+          type: 301
+
+      # Headers customizados
+      headers:
+        - source: "**/*.@(js|css)"
+          headers:
+            - key: "Cache-Control"
+              value: "public, max-age=31536000, immutable"
+        - source: "**"
+          headers:
+            - key: "X-Frame-Options"
+              value: "SAMEORIGIN"
+            - key: "X-Content-Type-Options"
+              value: "nosniff"
+
+  # ┌──────────────────────────────────────────────────────────────────────────┐
+  # │  DNS — GoDaddy CNAME                                                     │
+  # │                                                                          │
+  # │  Aponta app.meudominio.com.br → Firebase Hosting                         │
+  # │                                                                          │
+  # │  IMPORTANTE: Após o apply, acesse o Firebase Console para verificar      │
+  # │  o domínio customizado e obter os registros TXT de verificação.          │
+  # │                                                                          │
+  # │  Verifique a propagação DNS:                                             │
+  # │  $ dig app.meudominio.com.br CNAME                                      │
+  # │  $ nslookup app.meudominio.com.br                                       │
+  # └──────────────────────────────────────────────────────────────────────────┘
+
+  - type: dns_record
+    name: dns-app-cname
+    depends_on: [app-hosting]
+    config:
+      domain: "meudominio.com.br"
+      record_type: CNAME
+      record_name: "app"                       # app.meudominio.com.br
+      record_value: "minha-app.web.app"        # Firebase Hosting URL
+      ttl: 3600
+
+  # Registro TXT para verificação do domínio no Firebase (se necessário)
+  - type: dns_record
+    name: dns-firebase-verification
+    depends_on: [app-hosting]
+    config:
+      domain: "meudominio.com.br"
+      record_type: TXT
+      record_name: "_firebase"
+      record_value: "minha-app"                # Valor de verificação do Firebase
+      ttl: 3600
+
+# ── Deploy Config (opcional — para Cloud Run via CLI) ────────────────────────
+deploy:
+  type: cloud_run
+  image: "southamerica-east1-docker.pkg.dev/${GCP_PROJECT_ID}/docker-repo/api-backend:latest"
+  target: api-backend
+  port: 8080
+  env:
+    NODE_ENV: production
