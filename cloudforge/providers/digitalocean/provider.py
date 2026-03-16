@@ -81,6 +81,7 @@ class DigitalOceanProvider(BaseProvider):
             "kubernetes": self._create_kubernetes,
             "lb": self._create_load_balancer,
             "database": self._create_database,
+            "dns_record": self._create_dns_record,
         }
 
         handler = handlers.get(resource_type)
@@ -555,3 +556,68 @@ class DigitalOceanProvider(BaseProvider):
             "docker": "docker-20-04",
         }
         return image_map.get(image_name, image_name)
+
+    # ── DigitalOcean DNS Operations ──────────────────────────────
+
+    def _create_dns_record(self, params: dict) -> ResourceResult:
+        """Cria um registro DNS no DigitalOcean DNS."""
+        domain = params.get("domain", "")
+        record_name = params.get("name", "@")
+        record_type = params.get("type", "A").upper()
+        record_value = params.get("value", "")
+        ttl = params.get("ttl", 1800)
+
+        if not domain:
+            return ResourceResult(
+                success=False,
+                error="domain é obrigatório para DNS na DigitalOcean",
+            )
+
+        console.print(
+            f"  [cyan]Criando registro DNS '{record_name}.{domain}' ({record_type})...[/cyan]"
+        )
+
+        record_data = {
+            "type": record_type,
+            "name": record_name,
+            "data": record_value,
+            "ttl": ttl,
+        }
+
+        # Adicionar campos específicos por tipo
+        if record_type == "MX":
+            record_data["priority"] = params.get("priority", 10)
+        elif record_type == "SRV":
+            record_data["priority"] = params.get("priority", 10)
+            record_data["weight"] = params.get("weight", 5)
+            record_data["port"] = params.get("port", 5060)
+        elif record_type == "CAA":
+            record_data["flags"] = params.get("flags", 0)
+            record_data["tag"] = params.get("tag", "issue")
+
+        response = self._session.post(
+            f"https://api.digitalocean.com/v2/domains/{domain}/records",
+            json=record_data,
+        )
+
+        if response.status_code in [200, 201]:
+            data = response.json()
+            record = data.get("domain_record", {})
+            return ResourceResult(
+                success=True,
+                provider_id=str(record.get("id")),
+                outputs={
+                    "record_id": str(record.get("id")),
+                    "domain": domain,
+                    "record_name": record_name,
+                    "record_type": record_type,
+                    "record_value": record_value,
+                    "fqdn": f"{record_name}.{domain}" if record_name != "@" else domain,
+                },
+                message=f"DNS Record '{record_name}.{domain}' criado",
+            )
+        else:
+            return ResourceResult(
+                success=False,
+                error=f"Erro ao criar DNS: {response.text[:200]}",
+            )

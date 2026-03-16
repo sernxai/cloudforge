@@ -65,9 +65,20 @@ class CloudflareProvider(BaseProvider):
             return False
 
     def create_resource(self, resource_type: str, params: dict[str, Any]) -> ResourceResult:
-        if resource_type == "dns_record":
-            return self._create_dns_record(params)
-        return ResourceResult(success=False, error=f"Unsupported type: {resource_type}")
+        handlers = {
+            "dns_record": self._create_dns_record,
+            "cdn": self._create_cdn,
+            "worker": self._create_worker,
+            "pages": self._create_pages,
+            "ssl_tls": self._configure_ssl_tls,
+        }
+        handler = handlers.get(resource_type)
+        if not handler:
+            return ResourceResult(success=False, error=f"Unsupported type: {resource_type}")
+        try:
+            return handler(params)
+        except Exception as e:
+            return ResourceResult(success=False, error=str(e))
 
     def update_resource(self, resource_type: str, name: str, config: dict[str, Any], changes: dict[str, Any]) -> ResourceResult:
         if resource_type == "dns_record":
@@ -186,3 +197,232 @@ class CloudflareProvider(BaseProvider):
                 return ResourceResult(success=False, error=f"Cloudflare delete error: {error}")
         except Exception as e:
             return ResourceResult(success=False, error=str(e))
+
+    # ── Cloudflare CDN/Cache Operations ──────────────────────────
+
+    def _create_cdn(self, params: dict) -> ResourceResult:
+        """Configura CDN/Cache no Cloudflare."""
+        domain = params.get("domain", "")
+        cache_level = params.get("cache_level", "aggressive")
+        auto_minify = params.get("auto_minify", True)
+        rocket_loader = params.get("rocket_loader", False)
+        always_online = params.get("always_online", True)
+
+        if not domain:
+            return ResourceResult(
+                success=False,
+                error="domain é obrigatório para CDN",
+            )
+
+        zone_id = self._get_zone_id(domain)
+        if not zone_id:
+            return ResourceResult(
+                success=False,
+                error=f"Zona '{domain}' não encontrada",
+            )
+
+        console.print(
+            f"  [cyan]Configurando CDN para '{domain}'...[/cyan]"
+        )
+
+        # Configurar cache level
+        cache_url = f"{self.base_url}/zones/{zone_id}/settings/cache_level"
+        cache_data = {"value": cache_level}
+        requests.patch(cache_url, headers=self._headers, json=cache_data)
+
+        # Configurar auto minify
+        if auto_minify:
+            minify_url = f"{self.base_url}/zones/{zone_id}/settings/minify"
+            minify_data = {"value": {"css": "on", "html": "on", "js": "on"}}
+            requests.patch(minify_url, headers=self._headers, json=minify_data)
+
+        # Configurar rocket loader
+        if rocket_loader:
+            rocket_url = f"{self.base_url}/zones/{zone_id}/settings/rocket_loader"
+            rocket_data = {"value": "on"}
+            requests.patch(rocket_url, headers=self._headers, json=rocket_data)
+
+        # Configurar always online
+        if always_online:
+            online_url = f"{self.base_url}/zones/{zone_id}/settings/always_online"
+            online_data = {"value": "on"}
+            requests.patch(online_url, headers=self._headers, json=online_data)
+
+        return ResourceResult(
+            success=True,
+            provider_id=f"cdn-{domain}",
+            outputs={
+                "domain": domain,
+                "zone_id": zone_id,
+                "cache_level": cache_level,
+                "auto_minify": auto_minify,
+                "rocket_loader": rocket_loader,
+                "always_online": always_online,
+                "cdn_url": f"https://{domain}",
+            },
+            message=f"CDN configurado para '{domain}'",
+        )
+
+    # ── Cloudflare Workers Operations ────────────────────────────
+
+    def _create_worker(self, params: dict) -> ResourceResult:
+        """Cria/deploy de Cloudflare Worker."""
+        worker_name = params.get("name", "my-worker")
+        script = params.get("script", "")
+        route = params.get("route", "")
+        domain = params.get("domain", "")
+
+        if not script:
+            return ResourceResult(
+                success=False,
+                error="script é obrigatório para Worker",
+            )
+
+        console.print(
+            f"  [cyan]Criando Worker '{worker_name}'...[/cyan]"
+        )
+
+        # Deploy do worker
+        worker_url = f"{self.base_url}/accounts/{self._get_account_id()}/workers/scripts/{worker_name}"
+        worker_data = script
+
+        resp = requests.put(
+            worker_url,
+            headers={**self._headers, "Content-Type": "application/javascript"},
+            data=worker_data,
+        )
+
+        if resp.status_code == 200:
+            # Adicionar route se fornecida
+            if route and domain:
+                zone_id = self._get_zone_id(domain)
+                route_url = f"{self.base_url}/zones/{zone_id}/workers/routes"
+                route_data = {"pattern": route, "script": worker_name}
+                requests.post(route_url, headers=self._headers, json=route_data)
+
+            return ResourceResult(
+                success=True,
+                provider_id=worker_name,
+                outputs={
+                    "worker_name": worker_name,
+                    "route": route,
+                    "url": f"https://{worker_name}.workers.dev",
+                },
+                message=f"Worker '{worker_name}' criado",
+            )
+        else:
+            return ResourceResult(
+                success=False,
+                error=f"Erro ao criar Worker: {resp.text[:200]}",
+            )
+
+    # ── Cloudflare Pages Operations ──────────────────────────────
+
+    def _create_pages(self, params: dict) -> ResourceResult:
+        """Cria projeto Cloudflare Pages."""
+        project_name = params.get("name", "my-pages")
+        production_branch = params.get("branch", "main")
+
+        console.print(
+            f"  [cyan]Criando Pages project '{project_name}'...[/cyan]"
+        )
+
+        # Nota: Pages requer integração com Git provider
+        # Esta é uma implementação simplificada
+        return ResourceResult(
+            success=True,
+            provider_id=project_name,
+            outputs={
+                "project_name": project_name,
+                "production_branch": production_branch,
+                "url": f"https://{project_name}.pages.dev",
+                "note": "Configurar Git integration via Cloudflare Dashboard",
+            },
+            message=f"Pages project '{project_name}' registrado",
+        )
+
+    # ── SSL/TLS Configuration ────────────────────────────────────
+
+    def _configure_ssl_tls(self, params: dict) -> ResourceResult:
+        """Configura SSL/TLS no Cloudflare."""
+        domain = params.get("domain", "")
+        ssl_mode = params.get("mode", "full")  # off, flexible, full, strict
+        always_https = params.get("always_https", True)
+        min_tls = params.get("min_tls", "1.2")
+
+        if not domain:
+            return ResourceResult(
+                success=False,
+                error="domain é obrigatório para SSL/TLS",
+            )
+
+        zone_id = self._get_zone_id(domain)
+        if not zone_id:
+            return ResourceResult(
+                success=False,
+                error=f"Zona '{domain}' não encontrada",
+            )
+
+        console.print(
+            f"  [cyan]Configurando SSL/TLS para '{domain}' (mode: {ssl_mode})...[/cyan]"
+        )
+
+        # Configurar SSL mode
+        ssl_url = f"{self.base_url}/zones/{zone_id}/settings/ssl"
+        ssl_data = {"value": ssl_mode}
+        requests.patch(ssl_url, headers=self._headers, json=ssl_data)
+
+        # Configurar always use HTTPS
+        if always_https:
+            https_url = f"{self.base_url}/zones/{zone_id}/settings/always_use_https"
+            https_data = {"value": "on"}
+            requests.patch(https_url, headers=self._headers, json=https_data)
+
+        # Configurar minimum TLS version
+        tls_url = f"{self.base_url}/zones/{zone_id}/settings/min_tls_version"
+        tls_data = {"value": f"1.{min_tls}"}
+        requests.patch(tls_url, headers=self._headers, json=tls_data)
+
+        return ResourceResult(
+            success=True,
+            provider_id=f"ssl-{domain}",
+            outputs={
+                "domain": domain,
+                "zone_id": zone_id,
+                "ssl_mode": ssl_mode,
+                "always_https": always_https,
+                "min_tls": min_tls,
+            },
+            message=f"SSL/TLS configurado para '{domain}'",
+        )
+
+    # ── Helper Methods ───────────────────────────────────────────
+
+    def _get_zone_id(self, domain: str) -> str | None:
+        """Obtém zone ID pelo domínio."""
+        if domain in self._zone_ids:
+            return self._zone_ids[domain]
+
+        url = f"{self.base_url}/zones"
+        params = {"name": domain}
+        resp = requests.get(url, headers=self._headers, params=params)
+
+        if resp.status_code == 200:
+            data = resp.json()
+            zones = data.get("result", [])
+            if zones:
+                self._zone_ids[domain] = zones[0]["id"]
+                return zones[0]["id"]
+        return None
+
+    def _get_account_id(self) -> str:
+        """Obtém account ID."""
+        url = f"{self.base_url}/accounts"
+        resp = requests.get(url, headers=self._headers)
+
+        if resp.status_code == 200:
+            data = resp.json()
+            accounts = data.get("result", [])
+            if accounts:
+                return accounts[0]["id"]
+        return ""

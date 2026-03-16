@@ -78,6 +78,7 @@ class OracleCloudProvider(BaseProvider):
             self._clients["load_balancer"] = oci.load_balancer.LoadBalancerClient(config)
             self._clients["database"] = oci.database.DatabaseClient(config)
             self._clients["container_engine"] = oci.container_engine.ContainerEngineClient(config)
+            self._clients["dns"] = oci.dns.DnsClient(config)
 
             # Validar credenciais listando availability domains
             self._list_availability_domains()
@@ -112,6 +113,7 @@ class OracleCloudProvider(BaseProvider):
             "kubernetes": self._create_oke,
             "database": self._create_autonomous_db,
             "lb": self._create_load_balancer,
+            "dns_record": self._create_dns_record,
         }
 
         handler = handlers.get(resource_type)
@@ -552,3 +554,69 @@ class OracleCloudProvider(BaseProvider):
         }
         # Em produção, buscaria imagens reais via API
         return image_map.get(image_name, image_name)
+
+    # ── Oracle Cloud DNS Operations ──────────────────────────────
+
+    def _create_dns_record(self, params: dict) -> ResourceResult:
+        """Cria um registro DNS no Oracle Cloud DNS."""
+        try:
+            import oci
+
+            dns_client = self._clients["dns"]
+            
+            zone_name_or_id = params.get("zone", "")
+            record_name = params.get("name", "@")
+            record_type = params.get("type", "A").upper()
+            record_value = params.get("value", "")
+            ttl = params.get("ttl", 3600)
+
+            console.print(
+                f"  [cyan]Criando registro Oracle DNS '{record_name}' ({record_type})...[/cyan]"
+            )
+
+            # Criar o record
+            record_data = {
+                "name": record_name,
+                "rtype": record_type,
+                "ttl": ttl,
+                "rdata": record_value,
+            }
+
+            # Patch records na zona
+            patch_items = [
+                oci.dns.models.RecordPatch(
+                    operation="ADD",
+                    **record_data
+                )
+            ]
+
+            patch_zone_details = oci.dns.models.PatchZoneDetails(
+                items=patch_items
+            )
+
+            # Usar zone name ou ID
+            response = dns_client.patch_zone(
+                zone_name_or_id=zone_name_or_id,
+                patch_zone_details=patch_zone_details,
+            )
+
+            return ResourceResult(
+                success=True,
+                provider_id=f"{zone_name_or_id}/{record_name}",
+                outputs={
+                    "zone": zone_name_or_id,
+                    "record_name": record_name,
+                    "record_type": record_type,
+                    "record_value": record_value,
+                    "domain": response.data.zone_name if hasattr(response.data, 'zone_name') else zone_name_or_id,
+                },
+                message=f"Registro Oracle DNS '{record_name}' criado",
+            )
+
+        except ImportError:
+            return ResourceResult(
+                success=False,
+                error="oci DNS module não disponível",
+            )
+        except Exception as e:
+            return ResourceResult(success=False, error=str(e))

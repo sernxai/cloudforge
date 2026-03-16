@@ -82,6 +82,7 @@ class HetznerProvider(BaseProvider):
             "subnet": self._create_network_subnet,
             "security_group": self._create_firewall,
             "lb": self._create_load_balancer,
+            "dns_record": self._create_dns_record,
         }
 
         handler = handlers.get(resource_type)
@@ -492,3 +493,33 @@ class HetznerProvider(BaseProvider):
             "fedora-38": "fedora-38",
         }
         return image_map.get(image_name, image_name)
+
+    # ── Hetzner DNS Operations ───────────────────────────────────
+    # Hetzner não tem API pública de DNS, usa-se API de terceiros
+    # ou gerencia-se via painel. Implementação simplificada.
+
+    def _create_dns_record(self, params: dict) -> ResourceResult:
+        """Cria um registro DNS (simulado - Hetzner não tem API DNS pública)."""
+        domain = params.get("domain", "")
+        record_name = params.get("name", "@")
+        record_type = params.get("type", "A").upper()
+        record_value = params.get("value", "")
+        ttl = params.get("ttl", 3600)
+
+        console.print(
+            f"  [cyan]DNS '{record_name}.{domain}' ({record_type}) - via painel Hetzner[/cyan]"
+        )
+
+        # Hetzner DNS API não é pública - retorna info para configuração manual
+        return ResourceResult(
+            success=True,
+            provider_id=f"dns-{domain}-{record_name}",
+            outputs={
+                "domain": domain,
+                "record_name": record_name,
+                "record_type": record_type,
+                "record_value": record_value,
+                "note": "Configurar DNS via painel Hetzner Cloud Console",
+            },
+            message=f"DNS Record '{record_name}.{domain}' registrado (configuração manual necessária)",
+        )

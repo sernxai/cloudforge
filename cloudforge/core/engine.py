@@ -72,15 +72,16 @@ PROVIDER_REGISTRY = {
     },
     "alibaba": {
         "display_name": "Alibaba Cloud (Aliyun)",
-        "description": "Provider para Alibaba Cloud (ECS, VPC, SLB, ACK)",
+        "description": "Provider para Alibaba Cloud (ECS, VPC, SLB, ACK, DNS)",
         "dependencies": [
             "alibabacloud_ecs20140526>=3.0.0",
             "alibabacloud_vpc20160428>=2.0.0",
             "alibabacloud_slb20140515>=2.0.0",
             "alibabacloud_tea_openapi>=0.3.0",
             "alibabacloud_credentials>=0.3.0",
+            "alibabacloud_alidns20150109>=1.0.0",
         ],
-        "resources": ["vm", "vpc", "subnet", "security_group", "slb", "kubernetes", "database"],
+        "resources": ["vm", "vpc", "subnet", "security_group", "slb", "kubernetes", "database", "dns_record"],
         "install": "pip install cloudforge[alibaba]",
     },
     "godaddy": {
@@ -93,39 +94,39 @@ PROVIDER_REGISTRY = {
         "install": "pip install cloudforge[godaddy]",
     },
     "cloudflare": {
-        "display_name": "Cloudflare DNS",
-        "description": "Provider para gerenciamento de DNS na Cloudflare",
+        "display_name": "Cloudflare",
+        "description": "Provider para Cloudflare (DNS, CDN, Workers, Pages, SSL/TLS)",
         "dependencies": [
             "requests>=2.31.0",
         ],
-        "resources": ["dns_record"],
+        "resources": ["dns_record", "cdn", "worker", "pages", "ssl_tls"],
         "install": "pip install cloudforge[cloudflare]",
     },
     "oracle": {
         "display_name": "Oracle Cloud Infrastructure (OCI)",
-        "description": "Provider para Oracle Cloud (Compute, VCN, OKE, Autonomous DB)",
+        "description": "Provider para Oracle Cloud (Compute, VCN, OKE, Autonomous DB, DNS)",
         "dependencies": [
             "oci>=2.100.0",
         ],
-        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "lb"],
+        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "lb", "dns_record"],
         "install": "pip install cloudforge[oracle]",
     },
     "digitalocean": {
         "display_name": "DigitalOcean",
-        "description": "Provider para DigitalOcean (Droplets, Kubernetes, Databases)",
+        "description": "Provider para DigitalOcean (Droplets, Kubernetes, Databases, DNS)",
         "dependencies": [
             "requests>=2.31.0",
         ],
-        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "lb"],
+        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "lb", "dns_record"],
         "install": "pip install cloudforge[digitalocean]",
     },
     "hetzner": {
         "display_name": "Hetzner Cloud",
-        "description": "Provider para Hetzner Cloud (Servers, Networks, Firewalls)",
+        "description": "Provider para Hetzner Cloud (Servers, Networks, Firewalls, DNS)",
         "dependencies": [
             "requests>=2.31.0",
         ],
-        "resources": ["vm", "vpc", "subnet", "security_group", "lb"],
+        "resources": ["vm", "vpc", "subnet", "security_group", "lb", "dns_record"],
         "install": "pip install cloudforge[hetzner]",
     },
     "hostinger": {
@@ -139,11 +140,11 @@ PROVIDER_REGISTRY = {
     },
     "locaweb": {
         "display_name": "Locaweb Cloud",
-        "description": "Provider para Locaweb (Simple Server, Redes, LB, Hospedagem)",
+        "description": "Provider para Locaweb (Simple Server, Redes, LB, Hospedagem, DNS)",
         "dependencies": [
             "requests>=2.31.0",
         ],
-        "resources": ["vm", "vpc", "subnet", "security_group", "lb", "website", "database"],
+        "resources": ["vm", "vpc", "subnet", "security_group", "lb", "website", "database", "dns_record"],
         "install": "pip install cloudforge[locaweb]",
     },
 }

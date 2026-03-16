@@ -78,6 +78,7 @@ class LocawebProvider(BaseProvider):
             "lb": self._create_load_balancer,
             "website": self._create_website,
             "database": self._create_database,
+            "dns_record": self._create_dns_record,
         }
 
         handler = handlers.get(resource_type)
@@ -569,3 +570,62 @@ class LocawebProvider(BaseProvider):
                 "provider": "locaweb",
             }
         return {"id": network_id, "status": "not_found", "provider": "locaweb"}
+
+    # ── Locaweb DNS Operations ───────────────────────────────────
+
+    def _create_dns_record(self, params: dict) -> ResourceResult:
+        """Cria um registro DNS na Locaweb."""
+        domain = params.get("domain", "")
+        record_name = params.get("name", "@")
+        record_type = params.get("type", "A").upper()
+        record_value = params.get("value", "")
+        ttl = params.get("ttl", 3600)
+
+        if not domain:
+            return ResourceResult(
+                success=False,
+                error="domain é obrigatório para DNS na Locaweb",
+            )
+
+        console.print(
+            f"  [cyan]Criando registro DNS '{record_name}.{domain}' ({record_type})...[/cyan]"
+        )
+
+        # API Locaweb DNS
+        dns_data = {
+            "domain": domain,
+            "record_name": record_name,
+            "record_type": record_type,
+            "record_value": record_value,
+            "ttl": ttl,
+        }
+
+        if record_type == "MX":
+            dns_data["priority"] = params.get("priority", 10)
+
+        response = self._session.post(
+            f"{self.base_url}/dns/records",
+            json=dns_data,
+            timeout=60
+        )
+
+        if response.status_code in [200, 201]:
+            data = response.json()
+            record = data.get("record", {})
+            return ResourceResult(
+                success=True,
+                provider_id=str(record.get("id", f"{domain}-{record_name}")),
+                outputs={
+                    "domain": domain,
+                    "record_name": record_name,
+                    "record_type": record_type,
+                    "record_value": record_value,
+                    "fqdn": f"{record_name}.{domain}" if record_name != "@" else domain,
+                },
+                message=f"DNS Record '{record_name}.{domain}' criado",
+            )
+        else:
+            return ResourceResult(
+                success=False,
+                error=f"Erro ao criar DNS: {response.text[:200]}",
+            )

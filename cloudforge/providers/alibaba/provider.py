@@ -96,6 +96,7 @@ class AlibabaCloudProvider(BaseProvider):
             "slb": self._create_slb,
             "kubernetes": self._create_ack,
             "database": self._create_rds,
+            "dns_record": self._create_dns_record,
         }
 
         handler = handlers.get(resource_type)
@@ -683,3 +684,65 @@ class AlibabaCloudProvider(BaseProvider):
             "almalinux_9": "almalinux_9_x64_20G_alibase_20231222.vhd",
         }
         return image_map.get(image_name, image_name)
+
+    # ── Alibaba Cloud DNS (Alidns) Operations ────────────────────
+
+    def _create_dns_record(self, params: dict) -> ResourceResult:
+        """Cria um registro DNS no Alibaba Cloud DNS (Alidns)."""
+        try:
+            from alibabacloud_alidns20150109.client import Client as AlidnsClient
+            from alibabacloud_alidns20150109 import models as alidns_models
+
+            # Criar cliente DNS
+            config = self._clients.get("dns_config")
+            if not config:
+                config = type('Config', (), {
+                    'access_key_id': self.access_key,
+                    'access_key_secret': self.access_key_secret,
+                })()
+
+            dns_client = AlidnsClient(config)
+
+            domain = params.get("domain", "")
+            record_name = params.get("name", "@")
+            record_type = params.get("type", "A").upper()
+            record_value = params.get("value", "")
+            ttl = params.get("ttl", 600)
+
+            console.print(
+                f"  [cyan]Criando registro Alidns '{record_name}.{domain}' ({record_type})...[/cyan]"
+            )
+
+            # Adicionar registro
+            add_request = alidns_models.AddDomainRecordRequest(
+                domain_name=domain,
+                rr=record_name,
+                type=record_type,
+                value=record_value,
+                ttl=ttl,
+            )
+
+            response = dns_client.add_domain_record(add_request)
+            record_id = response.body.record_id
+
+            return ResourceResult(
+                success=True,
+                provider_id=record_id,
+                outputs={
+                    "record_id": record_id,
+                    "domain": domain,
+                    "record_name": record_name,
+                    "record_type": record_type,
+                    "record_value": record_value,
+                    "fqdn": f"{record_name}.{domain}" if record_name != "@" else domain,
+                },
+                message=f"Alidns Record '{record_name}.{domain}' criado: {record_id}",
+            )
+
+        except ImportError:
+            return ResourceResult(
+                success=False,
+                error="alibabacloud_alidns20150109 não instalado. Execute: pip install alibabacloud_alidns20150109",
+            )
+        except Exception as e:
+            return ResourceResult(success=False, error=str(e))
