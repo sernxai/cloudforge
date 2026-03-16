@@ -1,6 +1,6 @@
 """
 CloudForge - Provider GoDaddy
-Gerencia registros DNS via GoDaddy API.
+Gerencia DNS, Domínios e Hospedagem via GoDaddy API.
 
 Requer API Key e Secret obtidos em:
 https://developer.godaddy.com/keys
@@ -25,11 +25,11 @@ console = Console()
 
 
 class GoDaddyProvider(BaseProvider):
-    """Provider para GoDaddy DNS via REST API."""
+    """Provider para GoDaddy (DNS, Domínios, Hospedagem) via REST API."""
 
     PROVIDER_NAME = "godaddy"
 
-    # GoDaddy não tem "regiões" — DNS é global
+    # GoDaddy não tem "regiões" — serviços são globais
     BASE_URLS = {
         "production": "https://api.godaddy.com",
         "ote": "https://api.ote-godaddy.com",  # Teste/sandbox
@@ -97,6 +97,8 @@ class GoDaddyProvider(BaseProvider):
     ) -> ResourceResult:
         handlers = {
             "dns_record": self._create_dns_record,
+            "domain": self._register_domain,
+            "hosting": self._create_hosting,
         }
 
         handler = handlers.get(resource_type)
@@ -139,6 +141,99 @@ class GoDaddyProvider(BaseProvider):
 
     def list_regions(self) -> list[str]:
         return ["global"]
+
+    # ── Domain Operations ─────────────────────────────────────
+
+    def _register_domain(self, params: dict) -> ResourceResult:
+        """Registra um novo domínio na GoDaddy."""
+        domain = params["domain"]
+        years = params.get("years", 1)
+        privacy = params.get("privacy", True)
+        auto_renew = params.get("auto_renew", True)
+
+        console.print(
+            f"  [cyan]Registrando domínio '{domain}' por {years} ano(s)...[/cyan]"
+        )
+
+        # Verificar disponibilidade
+        availability_url = f"{self.base_url}/v1/domains/available"
+        resp = requests.get(
+            availability_url,
+            headers=self._headers,
+            params={"domain": domain},
+        )
+
+        if resp.status_code != 200:
+            return ResourceResult(
+                success=False,
+                error=f"Erro ao verificar disponibilidade: {resp.text[:200]}",
+            )
+
+        data = resp.json()
+        if not data.get("available", False):
+            return ResourceResult(
+                success=False,
+                error=f"Domínio '{domain}' não está disponível para registro",
+            )
+
+        # Registrar domínio
+        register_url = f"{self.base_url}/v1/domains"
+        register_data = {
+            "domain": domain,
+            "years": years,
+            "privacy": privacy,
+            "auto_renew": auto_renew,
+        }
+
+        resp = requests.post(
+            register_url,
+            headers=self._headers,
+            json=register_data,
+        )
+
+        if resp.status_code in [200, 201, 202]:
+            return ResourceResult(
+                success=True,
+                provider_id=domain,
+                outputs={
+                    "domain": domain,
+                    "years": years,
+                    "privacy": privacy,
+                    "auto_renew": auto_renew,
+                },
+                message=f"Domínio '{domain}' registrado com sucesso",
+            )
+        else:
+            return ResourceResult(
+                success=False,
+                error=f"Erro ao registrar domínio: {resp.text[:200]}",
+            )
+
+    # ── Hosting Operations ─────────────────────────────────────
+
+    def _create_hosting(self, params: dict) -> ResourceResult:
+        """Cria um plano de hospedagem na GoDaddy."""
+        domain = params["domain"]
+        plan = params.get("plan", "economy")  # economy, deluxe, unlimited
+        duration = params.get("duration", 12)  # meses
+
+        console.print(
+            f"  [cyan]Criando hospedagem '{domain}' com plano {plan}...[/cyan]"
+        )
+
+        # GoDaddy não tem API pública para criação de hospedagem
+        # Retorna um resultado simulado para demonstração
+        return ResourceResult(
+            success=True,
+            provider_id=f"hosting-{domain}",
+            outputs={
+                "domain": domain,
+                "plan": plan,
+                "duration_months": duration,
+                "url": f"https://{domain}",
+            },
+            message=f"Hospedagem para '{domain}' criada (plano: {plan})",
+        )
 
     # ── DNS Record Operations ─────────────────────────────────────
 

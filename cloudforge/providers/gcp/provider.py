@@ -99,6 +99,7 @@ class GCPProvider(BaseProvider):
             "firestore": self._create_firestore,
             "firebase_rtdb": self._create_firebase_rtdb,
             "firebase_hosting": self._create_firebase_hosting,
+            "dns_record": self._create_cloud_dns_record,
         }
 
         handler = handlers.get(resource_type)
@@ -860,3 +861,73 @@ class GCPProvider(BaseProvider):
             },
             message=f"Firebase Hosting configurado: {hosting_url}",
         )
+
+    # ── Cloud DNS Operations ──────────────────────────────────
+
+    def _create_cloud_dns_record(self, params: dict) -> ResourceResult:
+        """Cria um registro DNS no Cloud DNS."""
+        try:
+            from google.cloud import dns
+
+            client = dns.Client(project=self.project_id)
+            
+            zone_name = params.get("zone", "")
+            record_name = params.get("name", "")
+            record_type = params.get("type", "A")
+            record_value = params.get("value", "")
+            ttl = params.get("ttl", 300)
+
+            console.print(
+                f"  [cyan]Criando registro Cloud DNS '{record_name}' ({record_type})...[/cyan]"
+            )
+
+            # Obter zona
+            if zone_name:
+                zone = client.zone(zone_name)
+            else:
+                # Tentar encontrar zona pelo domínio
+                domain = params.get("domain", "")
+                if domain:
+                    zones = client.list_zones()
+                    for z in zones:
+                        if z.dns_name and (domain in z.dns_name or z.dns_name in domain):
+                            zone = z
+                            zone_name = z.name
+                            break
+
+            if not zone or not zone.exists():
+                return ResourceResult(
+                    success=False,
+                    error=f"Zona DNS '{zone_name}' não encontrada",
+                )
+
+            # Criar registro
+            record_set = dns.ResourceRecordSet(
+                name=f"{record_name}.{zone.dns_name}" if record_name and not record_name.endswith('.') else record_name,
+                record_type=record_type,
+                ttl=ttl,
+                rrdatas=[record_value],
+            )
+
+            zone.changes().add_record_set(record_set).create()
+
+            return ResourceResult(
+                success=True,
+                provider_id=f"{zone_name}/{record_name}",
+                outputs={
+                    "zone_name": zone_name,
+                    "record_name": record_name,
+                    "record_type": record_type,
+                    "record_value": record_value,
+                    "fqdn": record_set.name,
+                },
+                message=f"Registro Cloud DNS '{record_name}' criado",
+            )
+
+        except ImportError:
+            return ResourceResult(
+                success=False,
+                error="google-cloud-dns não instalado. Execute: pip install google-cloud-dns",
+            )
+        except Exception as e:
+            return ResourceResult(success=False, error=str(e))

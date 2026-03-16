@@ -35,16 +35,16 @@ console = Console()
 PROVIDER_REGISTRY = {
     "aws": {
         "display_name": "Amazon Web Services",
-        "description": "Provider para AWS (EC2, VPC, EKS, RDS)",
+        "description": "Provider para AWS (EC2, VPC, EKS, RDS, Route53)",
         "dependencies": [
             "boto3>=1.34.0",
         ],
-        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database"],
+        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "dns_record"],
         "install": "pip install cloudforge[aws]",
     },
     "gcp": {
         "display_name": "Google Cloud Platform",
-        "description": "Provider para GCP (Compute, GKE, Cloud SQL, Firebase)",
+        "description": "Provider para GCP (Compute, GKE, Cloud SQL, Firebase, Cloud DNS)",
         "dependencies": [
             "google-cloud-compute>=1.16.0",
             "google-cloud-container>=2.38.0",
@@ -54,12 +54,12 @@ PROVIDER_REGISTRY = {
             "firebase-admin>=6.5.0",
             "google-auth>=2.28.0",
         ],
-        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "cloud_run", "firebase_auth", "firestore", "firebase_rtdb", "firebase_hosting"],
+        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "cloud_run", "firebase_auth", "firestore", "firebase_rtdb", "firebase_hosting", "dns_record"],
         "install": "pip install cloudforge[gcp]",
     },
     "azure": {
         "display_name": "Microsoft Azure",
-        "description": "Provider para Azure (VMs, VNet, AKS, SQL)",
+        "description": "Provider para Azure (VMs, VNet, AKS, SQL, DNS Zones)",
         "dependencies": [
             "azure-mgmt-compute>=30.0.0",
             "azure-mgmt-network>=25.0.0",
@@ -67,7 +67,7 @@ PROVIDER_REGISTRY = {
             "azure-mgmt-rdbms>=10.1.0",
             "azure-identity>=1.15.0",
         ],
-        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database"],
+        "resources": ["vm", "vpc", "subnet", "security_group", "kubernetes", "database", "dns_record"],
         "install": "pip install cloudforge[azure]",
     },
     "alibaba": {
@@ -84,12 +84,12 @@ PROVIDER_REGISTRY = {
         "install": "pip install cloudforge[alibaba]",
     },
     "godaddy": {
-        "display_name": "GoDaddy DNS",
-        "description": "Provider para gerenciamento de DNS na GoDaddy",
+        "display_name": "GoDaddy",
+        "description": "Provider para GoDaddy (DNS, Domínios, Hospedagem)",
         "dependencies": [
             "requests>=2.31.0",
         ],
-        "resources": ["dns_record"],
+        "resources": ["dns_record", "domain", "hosting"],
         "install": "pip install cloudforge[godaddy]",
     },
     "cloudflare": {

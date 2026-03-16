@@ -84,6 +84,7 @@ class AzureProvider(BaseProvider):
             "security_group": self._create_nsg,
             "kubernetes": self._create_aks,
             "database": self._create_postgresql,
+            "dns_record": self._create_dns_record,
         }
 
         handler = handlers.get(resource_type)
@@ -364,3 +365,113 @@ class AzureProvider(BaseProvider):
             },
             message=f"Azure PostgreSQL '{params['name']}' criado",
         )
+
+    # ── Azure DNS Operations ──────────────────────────────────
+
+    def _create_dns_record(self, params: dict) -> ResourceResult:
+        """Cria um registro DNS no Azure DNS Zones."""
+        try:
+            from azure.mgmt.dns import DnsManagementClient
+            from azure.mgmt.dns.models import (
+                RecordSet, ARecord, AAAARecord, CnameRecord, MxRecord,
+                TxtRecord, CaaRecord, SrvRecord, NsRecord, PtrRecord,
+            )
+
+            dns_client = DnsManagementClient(
+                credential=self.credential,
+                subscription_id=self.subscription_id
+            )
+
+            resource_group = params.get("resource_group", self.resource_group)
+            zone_name = params.get("zone", "")
+            record_name = params.get("name", "@")
+            record_type = params.get("type", "A").upper()
+            record_value = params.get("value", "")
+            ttl = params.get("ttl", 3600)
+
+            console.print(
+                f"  [cyan]Criando registro Azure DNS '{record_name}' ({record_type})...[/cyan]"
+            )
+
+            # Mapear tipos de registro
+            record_type_map = {
+                "A": "A",
+                "AAAA": "AAAA",
+                "CNAME": "Cname",
+                "MX": "Mx",
+                "TXT": "Txt",
+                "CAA": "Caa",
+                "SRV": "Srv",
+                "NS": "Ns",
+                "PTR": "Ptr",
+            }
+
+            azure_type = record_type_map.get(record_type)
+            if not azure_type:
+                return ResourceResult(
+                    success=False,
+                    error=f"Tipo de registro '{record_type}' não suportado",
+                )
+
+            # Criar o registro apropriado
+            if record_type == "A":
+                record_data = ARecord(ipv4_address=record_value)
+            elif record_type == "AAAA":
+                record_data = AAAARecord(ipv6_address=record_value)
+            elif record_type == "CNAME":
+                record_data = CnameRecord(cname=record_value)
+            elif record_type == "MX":
+                record_data = MxRecord(preference=params.get("priority", 10), exchange=record_value)
+            elif record_type == "TXT":
+                record_data = TxtRecord(value=[record_value])
+            elif record_type == "CAA":
+                record_data = CaaRecord(flags=0, tag="issue", value=record_value)
+            elif record_type == "SRV":
+                record_data = SrvRecord(
+                    priority=params.get("priority", 10),
+                    weight=params.get("weight", 5),
+                    port=params.get("port", 5060),
+                    target=record_value,
+                )
+            elif record_type == "NS":
+                record_data = NsRecord(nsdname=record_value)
+            elif record_type == "PTR":
+                record_data = PtrRecord(ptrdname=record_value)
+            else:
+                return ResourceResult(
+                    success=False,
+                    error=f"Tipo de registro '{record_type}' não implementado",
+                )
+
+            # Criar record set
+            record_set = RecordSet(ttl=ttl)
+            setattr(record_set, azure_type.lower(), [record_data])
+
+            dns_client.record_sets.create_or_update(
+                resource_group_name=resource_group,
+                zone_name=zone_name,
+                relative_record_set_name=record_name,
+                record_type=azure_type,
+                parameters=record_set,
+            )
+
+            return ResourceResult(
+                success=True,
+                provider_id=f"{zone_name}/{record_name}",
+                outputs={
+                    "zone_name": zone_name,
+                    "record_name": record_name,
+                    "record_type": record_type,
+                    "record_value": record_value,
+                    "fqdn": f"{record_name}.{zone_name}" if record_name != "@" else zone_name,
+                },
+                message=f"Registro Azure DNS '{record_name}' criado",
+            )
+
+        except ImportError:
+            return ResourceResult(
+                success=False,
+                error="azure-mgmt-dns não instalado. Execute: pip install azure-mgmt-dns",
+            )
+        except Exception as e:
+            return ResourceResult(success=False, error=str(e))

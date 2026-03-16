@@ -51,6 +51,7 @@ class AWSProvider(BaseProvider):
             self._clients["eks"] = self._session.client("eks")
             self._clients["rds"] = self._session.client("rds")
             self._clients["sts"] = self._session.client("sts")
+            self._clients["route53"] = self._session.client("route53")
 
             # Validar credenciais
             self._clients["sts"].get_caller_identity()
@@ -83,6 +84,7 @@ class AWSProvider(BaseProvider):
             "security_group": self._create_security_group,
             "kubernetes": self._create_eks,
             "database": self._create_rds,
+            "dns_record": self._create_route53_record,
         }
 
         handler = handlers.get(resource_type)
@@ -120,6 +122,7 @@ class AWSProvider(BaseProvider):
             "security_group": self._delete_security_group,
             "kubernetes": self._delete_eks,
             "database": self._delete_rds,
+            "dns_record": self._delete_route53_record,
         }
 
         handler = handlers.get(resource_type)
@@ -427,6 +430,131 @@ class AWSProvider(BaseProvider):
             SkipFinalSnapshot=True,
         )
         return ResourceResult(success=True, message=f"RDS {provider_id} deletado")
+
+    # ── Route53 DNS Operations ──────────────────────────────────
+
+    def _create_route53_record(self, params: dict) -> ResourceResult:
+        """Cria um registro DNS no Route53."""
+        route53 = self._clients["route53"]
+        
+        hosted_zone = params.get("hosted_zone")
+        record_name = params.get("name", "")
+        record_type = params.get("type", "A")
+        record_value = params.get("value", "")
+        ttl = params.get("ttl", 300)
+
+        console.print(
+            f"  [cyan]Criando registro Route53 '{record_name}' ({record_type})...[/cyan]"
+        )
+
+        # Se hosted_zone não fornecido, tentar encontrar pelo domínio
+        if not hosted_zone:
+            domain = params.get("domain", "")
+            if domain:
+                zones = route53.list_hosted_zones_by_name(DNSName=domain)["HostedZones"]
+                if zones:
+                    hosted_zone = zones[0]["Id"]
+                    console.print(f"  [dim]Hosted Zone encontrada: {hosted_zone}[/dim]")
+
+        if not hosted_zone:
+            return ResourceResult(
+                success=False,
+                error="hosted_zone não fornecida e não foi possível encontrar pelo domínio",
+            )
+
+        # Criar registro
+        response = route53.change_resource_record_sets(
+            HostedZoneId=hosted_zone,
+            ChangeBatch={
+                "Comment": f"Created by CloudForge: {record_name}",
+                "Changes": [
+                    {
+                        "Action": "CREATE",
+                        "ResourceRecordSets": [
+                            {
+                                "Name": record_name,
+                                "Type": record_type,
+                                "TTL": ttl,
+                                "ResourceRecords": [{"Value": record_value}],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+        change_id = response["ChangeInfo"]["Id"]
+
+        return ResourceResult(
+            success=True,
+            provider_id=f"{hosted_zone}/{record_name}",
+            outputs={
+                "hosted_zone": hosted_zone,
+                "record_name": record_name,
+                "record_type": record_type,
+                "record_value": record_value,
+                "change_id": change_id,
+            },
+            message=f"Registro Route53 '{record_name}' criado",
+        )
+
+    def _delete_route53_record(self, provider_id: str) -> ResourceResult:
+        """Deleta um registro DNS do Route53."""
+        route53 = self._clients["route53"]
+        
+        # provider_id formato: hosted_zone/record_name
+        parts = provider_id.split("/")
+        if len(parts) != 2:
+            return ResourceResult(
+                success=False,
+                error=f"Formato inválido de provider_id: {provider_id}",
+            )
+
+        hosted_zone, record_name = parts
+
+        console.print(
+            f"  [red]Deletando registro Route53 '{record_name}'...[/red]"
+        )
+
+        # Primeiro, obter o registro atual para saber o valor
+        try:
+            records = route53.list_resource_record_sets(
+                HostedZoneId=hosted_zone,
+                StartRecordName=record_name,
+            )["ResourceRecordSets"]
+
+            record_to_delete = None
+            for record in records:
+                if record["Name"] == record_name or record["Name"] == f"{record_name}.":
+                    record_to_delete = record
+                    break
+
+            if not record_to_delete:
+                return ResourceResult(
+                    success=False,
+                    error=f"Registro '{record_name}' não encontrado",
+                )
+
+            # Deletar registro
+            route53.change_resource_record_sets(
+                HostedZoneId=hosted_zone,
+                ChangeBatch={
+                    "Changes": [
+                        {
+                            "Action": "DELETE",
+                            "ResourceRecordSets": [record_to_delete],
+                        }
+                    ],
+                },
+            )
+
+            return ResourceResult(
+                success=True,
+                message=f"Registro Route53 '{record_name}' deletado",
+            )
+
+        except Exception as e:
+            return ResourceResult(success=False, error=str(e))
 
     def _resolve_ami(self, image_name: str) -> str:
         """Resolve nome de imagem amigável para AMI ID."""
