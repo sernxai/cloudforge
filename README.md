@@ -6,11 +6,13 @@
 
 ## Features
 
-- **Multi-cloud**: AWS, GCP, Azure, **Alibaba Cloud** with unified abstraction
+- **Multi-cloud**: AWS, GCP, Azure, **Alibaba Cloud**, Oracle, DigitalOcean, Hetzner, Hostinger, Locaweb
 - **Native Firebase**: Auth, Firestore, Realtime Database, and Hosting
 - **Cloud Run**: Serverless container deployment on GCP
-- **Multi-provider DNS**: Integrated GoDaddy and Cloudflare (CNAME, A, TXT, MX)
-- **Alibaba Cloud Support**: ECS, VPC, VSwitch, SLB, ACK
+- **Universal DNS**: DNS management in **ALL 11 providers** (Route53, Cloud DNS, DNS Zones, Alidns, etc.)
+- **Cloudflare Cloud**: CDN, Workers, Pages, SSL/TLS configuration
+- **GoDaddy Cloud**: Domain registration, Web Hosting, DNS
+- **Alibaba Cloud Support**: ECS, VPC, VSwitch, SLB, ACK, Alidns
 - **Declarative**: Entire infrastructure defined in YAML
 - **Managed State**: Local control (JSON) with diff, backup, and rollback
 - **Plan/Apply/Destroy**: Secure workflow with preview before applying
@@ -21,19 +23,27 @@
 
 | Type | Description | Providers |
 |---|---|---|
-| vm | Virtual Machines | AWS, GCP, Azure, **Alibaba** |
-| vpc | Virtual Private Cloud / VNet | AWS, GCP, Azure, **Alibaba** |
-| subnet | Subnets | AWS, GCP, Azure, **Alibaba** |
-| security_group | Firewall / NSG | AWS, GCP, Azure, **Alibaba** |
-| kubernetes | K8s Clusters (EKS/GKE/AKS/ACK) | AWS, GCP, Azure, **Alibaba** |
-| database | Managed Databases (RDS/SQL/etc) | AWS, GCP, Azure, **Alibaba** |
+| vm | Virtual Machines | AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean, Hetzner, Hostinger, Locaweb |
+| vpc | Virtual Private Cloud / VNet | AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean, Hetzner, Locaweb |
+| subnet | Subnets | AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean, Hetzner, Locaweb |
+| security_group | Firewall / NSG | AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean, Hetzner, Locaweb |
+| kubernetes | K8s Clusters (EKS/GKE/AKS/ACK/OKE/DOKS) | AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean |
+| database | Managed Databases (RDS/SQL/etc) | AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean, Hostinger, Locaweb |
 | cloud_run | Serverless Container | GCP |
-| slb | Server Load Balancer | **Alibaba** |
+| slb | Server Load Balancer | Alibaba, Oracle, DigitalOcean, Hetzner, Locaweb |
+| lb | Load Balancer | Oracle, DigitalOcean, Hetzner, Locaweb |
 | firebase_auth | Firebase Authentication | GCP |
 | firestore | Cloud Firestore (NoSQL) | GCP |
 | firebase_rtdb | Firebase Realtime Database | GCP |
 | firebase_hosting | Static Hosting / SPA | GCP |
-| dns_record | DNS Records (CNAME, A, TXT, MX) | GoDaddy, Cloudflare |
+| dns_record | DNS Records (A, AAAA, CNAME, MX, TXT, NS, SRV, CAA) | **ALL 11 providers** |
+| domain | Domain Registration | GoDaddy |
+| hosting | Web Hosting | GoDaddy, Hostinger, Locaweb |
+| website | Website Management | Hostinger, Locaweb |
+| cdn | CDN/Cache Configuration | Cloudflare |
+| worker | Serverless Functions | Cloudflare |
+| pages | Static Site Hosting | Cloudflare |
+| ssl_tls | SSL/TLS Configuration | Cloudflare |
 
 ## CloudForge vs OpenTofu
 
@@ -155,6 +165,115 @@ firebase deploy --only hosting
 dig app.mydomain.com.br CNAME +short
 # (on Windows PowerShell)
 Resolve-DnsName app.mydomain.com.br -Type CNAME
+```
+
+## Universal DNS Management
+
+CloudForge supports DNS management across **ALL 11 providers**:
+
+| Provider | DNS Service | Record Types |
+|----------|-------------|--------------|
+| AWS | Route53 | A, AAAA, CNAME, MX, TXT, NS, PTR, SOA, SRV, CAA |
+| GCP | Cloud DNS | A, AAAA, CNAME, MX, TXT, NS, PTR, SOA, SRV, CAA, NAPTR, SPF |
+| Azure | DNS Zones | A, AAAA, CNAME, MX, TXT, NS, PTR, SOA, SRV, CAA |
+| Oracle Cloud | Oracle DNS | A, AAAA, CNAME, MX, TXT, NS, PTR, SRV, CAA |
+| DigitalOcean | DNS | A, AAAA, CNAME, MX, TXT, NS, PTR, SRV, CAA |
+| Alibaba Cloud | Alidns | A, AAAA, CNAME, MX, TXT, NS, PTR, SRV, CAA |
+| Locaweb | DNS | A, AAAA, CNAME, MX, TXT, NS, SRV |
+| Hetzner | DNS Panel | A, AAAA, CNAME, MX, TXT, NS (via panel) |
+| Hostinger | DNS | A, AAAA, CNAME, MX, TXT, NS |
+| GoDaddy | DNS | A, AAAA, CNAME, MX, TXT, NS, SRV, CAA |
+| Cloudflare | DNS | A, AAAA, CNAME, MX, TXT, NS, PTR, SRV, CAA, NAPTR |
+
+### Example: DNS Record
+
+```yaml
+# AWS Route53
+- type: dns_record
+  name: www-record
+  config:
+    hosted_zone: Z1234567890ABC
+    name: www
+    type: A
+    value: 192.0.2.1
+    ttl: 300
+
+# GCP Cloud DNS
+- type: dns_record
+  name: api-record
+  config:
+    zone: example-com-zone
+    name: api
+    type: CNAME
+    value: www.example.com
+    ttl: 3600
+
+# Cloudflare DNS
+- type: dns_record
+  name: cdn-record
+  config:
+    domain: example.com
+    name: cdn
+    type: CNAME
+    value: cdn.cloudflare.net
+    ttl: 3600
+```
+
+## Cloudflare Cloud Services
+
+CloudForge supports full Cloudflare cloud management:
+
+### CDN/Cache
+
+```yaml
+- type: cdn
+  name: cdn-config
+  config:
+    domain: example.com
+    cache_level: aggressive
+    auto_minify: true
+    rocket_loader: true
+    always_online: true
+```
+
+### Workers (Serverless Functions)
+
+```yaml
+- type: worker
+  name: api-worker
+  config:
+    name: api-handler
+    script: |
+      addEventListener('fetch', event => {
+        event.respondWith(handleRequest(event.request))
+      })
+      async function handleRequest(request) {
+        return new Response('Hello from Worker!')
+      }
+    route: "example.com/api/*"
+    domain: example.com
+```
+
+### Pages (Static Sites)
+
+```yaml
+- type: pages
+  name: my-site
+  config:
+    name: my-static-site
+    branch: main
+```
+
+### SSL/TLS Configuration
+
+```yaml
+- type: ssl_tls
+  name: ssl-config
+  config:
+    domain: example.com
+    mode: strict  # off, flexible, full, strict
+    always_https: true
+    min_tls: "1.3"
 ```
 
 ## License
