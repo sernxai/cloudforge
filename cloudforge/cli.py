@@ -43,7 +43,7 @@ def cli():
 @cli.command()
 @click.option(
     "--provider", "-p",
-    type=click.Choice(["aws", "gcp", "azure", "alibaba", "oracle", "digitalocean", "hetzner", "hostinger", "locaweb"]),
+    type=click.Choice(["aws", "gcp", "azure", "alibaba", "oracle", "digitalocean", "hetzner", "hostinger", "locaweb", "ovh"]),
     required=True,
     help="Provedor de nuvem",
 )
@@ -190,6 +190,9 @@ def _instantiate_provider(provider_name: str):
     elif provider_name == "cloudflare":
         from cloudforge.providers.cloudflare.provider import CloudflareProvider
         return CloudflareProvider("global", {})
+    elif provider_name == "ovh":
+        from cloudforge.providers.ovh.provider import OVHProvider
+        return OVHProvider("GRA11", {})
     else:
         raise ValueError(f"Provider desconhecido: {provider_name}")
 

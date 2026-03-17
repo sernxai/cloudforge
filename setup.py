@@ -62,10 +62,14 @@ locaweb_requirements = [
     # requests já incluído no core
 ]
 
+ovh_requirements = [
+    "ovh>=1.0.0",
+]
+
 setup(
     name="cloudforge",
     version="1.0.0",
-    description="Infrastructure as Code em Python — multi-cloud (AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean, Hetzner, Hostinger, Locaweb)",
+    description="Infrastructure as Code em Python — multi-cloud (AWS, GCP, Azure, Alibaba, Oracle, DigitalOcean, Hetzner, Hostinger, Locaweb, OVHCloud)",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="CloudForge Team",
@@ -84,13 +88,15 @@ setup(
         "hetzner": hetzner_requirements,
         "hostinger": hostinger_requirements,
         "locaweb": locaweb_requirements,
+        "ovh": ovh_requirements,
         "dns": [],  # GoDaddy e Cloudflare usam requests (já incluído no core)
         "all": (
             aws_requirements +
             gcp_requirements +
             azure_requirements +
             alibaba_requirements +
-            oracle_requirements
+            oracle_requirements +
+            ovh_requirements
         ),
     },
     entry_points={
@@ -107,5 +113,5 @@ setup(
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
     ],
-    keywords="iac infrastructure terraform cloud aws gcp azure alibaba oracle digitalocean hetzner hostinger locaweb",
+    keywords="iac infrastructure terraform cloud aws gcp azure alibaba oracle digitalocean hetzner hostinger locaweb ovh",
 )

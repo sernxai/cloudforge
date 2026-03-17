@@ -1,0 +1,3 @@
+# Dependências para Provider OVHCloud
+ovh>=1.0.0
+rich>=13.0.0

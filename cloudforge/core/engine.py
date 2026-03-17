@@ -147,6 +147,15 @@ PROVIDER_REGISTRY = {
         "resources": ["vm", "vpc", "subnet", "security_group", "lb", "website", "database", "dns_record"],
         "install": "pip install cloudforge[locaweb]",
     },
+    "ovh": {
+        "display_name": "OVHCloud",
+        "description": "Provider para OVHCloud (Public Cloud, Kubernetes, Databases, DNS)",
+        "dependencies": [
+            "ovh>=1.0.0",
+        ],
+        "resources": ["vm", "vpc", "kubernetes", "database", "dns_record"],
+        "install": "pip install cloudforge[ovh]",
+    },
 }
 
 # Mapeamento: tipo de recurso → provider padrão
@@ -210,6 +219,9 @@ def get_provider(name: str, region: str, credentials: dict | None = None) -> Bas
     elif name == "cloudflare":
         from cloudforge.providers.cloudflare.provider import CloudflareProvider
         return CloudflareProvider(region, credentials)
+    elif name == "ovh":
+        from cloudforge.providers.ovh.provider import OVHProvider
+        return OVHProvider(region, credentials)
     else:
         raise ValueError(f"Provider desconhecido: {name}")
 

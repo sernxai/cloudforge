@@ -42,6 +42,8 @@ cloudforge/providers/locaweb/__init__.py
 cloudforge/providers/locaweb/provider.py
 cloudforge/providers/oracle/__init__.py
 cloudforge/providers/oracle/provider.py
+cloudforge/providers/ovh/__init__.py
+cloudforge/providers/ovh/provider.py
 cloudforge/resources/__init__.py
 cloudforge/resources/base.py
 cloudforge/resources/cloud_run.py
