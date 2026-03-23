@@ -47,13 +47,25 @@ class Config:
         return self._data
 
     def _resolve_env_vars(self, obj: Any) -> Any:
-        """Substitui referências ${VAR} por variáveis de ambiente."""
+        """Substitui referências ${VAR} por variáveis de ambiente ou credenciais cifradas."""
         if isinstance(obj, str):
             import re
+            from cloudforge.core.auth import CredentialsManager
+            
+            mgr = CredentialsManager()
+            # Carregar todas as credenciais em um mapa plano para busca rápida
+            all_creds_map = {}
+            for prov_creds in mgr.load_all().values():
+                all_creds_map.update(prov_creds)
+
             pattern = r"\$\{([^}]+)\}"
             matches = re.findall(pattern, obj)
             for var_name in matches:
-                env_value = os.environ.get(var_name, "")
+                # Prioridade: 1. Env vars, 2. Credenciais cifradas
+                env_value = os.environ.get(var_name)
+                if env_value is None:
+                    env_value = all_creds_map.get(var_name, "")
+                
                 obj = obj.replace(f"${{{var_name}}}", env_value)
             return obj
         elif isinstance(obj, dict):
@@ -100,23 +112,63 @@ class Config:
         return self._data.get("project", {})
 
     @property
+    def providers(self) -> dict[str, dict]:
+        """Retorna todos os providers definidos (multi-provider)."""
+        # Suporte novo: bloco 'providers'
+        if "providers" in self._data:
+            return self._data["providers"]
+        
+        # Suporte legado: bloco 'provider' único
+        if "provider" in self._data:
+            return {"default": self._data["provider"]}
+            
+        return {}
+
+    @property
     def provider(self) -> dict:
-        return self._data.get("provider", {})
+        """Retorna o provider default (para compatibilidade)."""
+        return self.providers.get("default", {})
 
     @property
     def resources(self) -> list[dict]:
         return self._data.get("resources", [])
 
-    @property
-    def deploy(self) -> dict | None:
-        return self._data.get("deploy")
+    def set(self, path: str, value: Any) -> None:
+        """Define um valor na configuração usando um path separado por pontos."""
+        # Recarregar sem var_resolve para não salvar os valores resolvidos de volta
+        if not self._data:
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                self._data = yaml.safe_load(f) or {}
 
-    @property
-    def external_cloudforge(self) -> dict:
-        """Retorna configuração de providers externos (DNS, etc)."""
-        return self._data.get("external_cloudforge", {"providers": {}})
+        parts = path.split(".")
+        current = self._data
+        
+        # Percorrer até o penúltimo nível
+        for part in parts[:-1]:
+            if part not in current or not isinstance(current[part], dict):
+                current[part] = {}
+            current = current[part]
+        
+        # Definir o valor no último nível
+        key = parts[-1]
+        
+        # Tentar converter valor se for numérico ou booleano para manter tipos YAML
+        if isinstance(value, str):
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
+            elif value.isdigit():
+                value = int(value)
+            else:
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass
+        
+        current[key] = value
 
-    @property
-    def external_providers(self) -> dict:
-        """Alias para external_cloudforge (legado)."""
-        return self.external_cloudforge
+    def save(self) -> None:
+        """Salva a configuração de volta no arquivo YAML."""
+        with open(self.config_path, "w", encoding="utf-8") as f:
+            yaml.dump(self._data, f, default_flow_style=False, allow_unicode=True)

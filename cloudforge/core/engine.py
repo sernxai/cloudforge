@@ -233,11 +233,12 @@ class Engine:
         self,
         config_path: str = "infrastructure.yaml",
         state_path: str = ".cloudforge/state.json",
+        workspace: str | None = None,
     ):
         self.config = Config(config_path)
-        self.state = StateManager(state_path)
-        self.provider: BaseProvider | None = None
-        self._external_providers: dict[str, BaseProvider] = {}
+        self.state = StateManager(state_path, workspace=workspace)
+        self.workspace = workspace
+        self._providers: dict[str, BaseProvider] = {}
         self._resource_outputs: dict[str, dict] = {}
 
     def init(self, provider_name: str, region: str) -> None:
@@ -368,7 +369,7 @@ class Engine:
 
         return plan
 
-    def apply(self, auto_approve: bool = False) -> bool:
+    def apply(self, auto_approve: bool = False, dry_run: bool = False) -> bool:
         """Aplica o plano de execução."""
         plan = self.plan()
 
@@ -376,7 +377,7 @@ class Engine:
             return True
 
         # Confirmação
-        if not auto_approve:
+        if not auto_approve and not dry_run:
             console.print()
             response = console.input(
                 "[bold yellow]Deseja aplicar essas mudanças? (yes/no): [/bold yellow]"
@@ -386,29 +387,37 @@ class Engine:
                 return False
 
         console.print()
+        if dry_run:
+            msg = f"Simulando mudanças (DRY RUN - Workspace: {self.workspace or 'default'})..."
+        else:
+            msg = f"Aplicando mudanças (Workspace: {self.workspace or 'default'})..."
+            
         console.print(
-            Panel("Aplicando mudanças...", title="☁️  CloudForge Apply", border_style="cyan")
+            Panel(
+                msg,
+                title="☁️  CloudForge Apply",
+                border_style="cyan"
+            )
         )
 
-        # Inicializar provider principal
-        provider_config = self.config.provider
-        self.provider = get_provider(
-            provider_config["name"],
-            provider_config["region"],
-            provider_config.get("credentials"),
-        )
-        self.provider.authenticate()
-
-        # Inicializar providers externos (ex: GoDaddy para DNS)
-        for ext_name, ext_creds in self.config.external_cloudforge.providers.items():
-            try:
-                ext_provider = get_provider(ext_name, "global", ext_creds)
-                ext_provider.authenticate()
-                self._external_providers[ext_name] = ext_provider
-            except Exception as e:
-                console.print(
-                    f"[yellow]⚠ Provider externo '{ext_name}': {e}[/yellow]"
-                )
+        if not dry_run:
+            # Inicializar todos os providers definidos
+            for p_alias, p_config in self.config.providers.items():
+                try:
+                    prov_instance = get_provider(
+                        p_config["name"],
+                        p_config["region"],
+                        p_config.get("credentials"),
+                    )
+                    prov_instance.authenticate()
+                    self._providers[p_alias] = prov_instance
+                except Exception as e:
+                    console.print(f"[red]✗ Erro ao autenticar provider '{p_alias}': {e}[/red]")
+                    return False
+        else:
+            # Em dry run, simular providers
+            for p_alias, p_config in self.config.providers.items():
+                console.print(f"[dim][SKIP] Autenticando em {p_config['name']} ({p_config['region']})...[/dim]")
 
         success = True
 
@@ -425,13 +434,25 @@ class Engine:
                     total=None,
                 )
 
-                result = self._apply_create(action)
+                if dry_run:
+                    console.print(f"[yellow]  [DRY RUN] Criaria {action.resource_type} '{action.resource_name}'[/yellow]")
+                    import json
+                    console.print(f"  [dim]Config: {json.dumps(action.config, indent=2)}[/dim]")
+                    result = ResourceResult(success=True, provider_id=f"dry-run-{action.resource_name}")
+                else:
+                    result = self._apply_create(action)
 
                 if result.success:
-                    progress.update(task, description=(
-                        f"[green]✓ {action.resource_type} "
-                        f"'{action.resource_name}' criado[/green]"
-                    ))
+                    if not dry_run:
+                        progress.update(task, description=(
+                            f"[green]✓ {action.resource_type} "
+                            f"'{action.resource_name}' criado[/green]"
+                        ))
+                    else:
+                        progress.update(task, description=(
+                            f"[yellow]✓ {action.resource_type} "
+                            f"'{action.resource_name}' simulado[/yellow]"
+                        ))
                 else:
                     progress.update(task, description=(
                         f"[red]✗ Falha ao criar "
@@ -448,9 +469,17 @@ class Engine:
                     total=None,
                 )
 
-                result = self._apply_update(action)
+                if dry_run:
+                    console.print(f"[yellow]  [DRY RUN] Atualizaria {action.resource_type} '{action.resource_name}'[/yellow]")
+                    import json
+                    console.print(f"  [dim]Changes: {json.dumps(action.changes, indent=2)}[/dim]")
+                    result = ResourceResult(success=True)
+                else:
+                    result = self._apply_update(action)
 
                 status = "[green]✓ atualizado[/green]" if result.success else f"[red]✗ falha: {result.error}[/red]"
+                if dry_run and result.success:
+                    status = "[yellow]✓ simulado[/yellow]"
                 progress.update(
                     task,
                     description=f"{action.resource_name}: {status}",
@@ -467,9 +496,15 @@ class Engine:
                     total=None,
                 )
 
-                result = self._apply_delete(action)
+                if dry_run:
+                    console.print(f"[yellow]  [DRY RUN] Destruiria {action.resource_type} '{action.resource_name}'[/yellow]")
+                    result = ResourceResult(success=True)
+                else:
+                    result = self._apply_delete(action)
 
                 status = "[green]✓ destruído[/green]" if result.success else f"[red]✗ falha: {result.error}[/red]"
+                if dry_run and result.success:
+                    status = "[yellow]✓ simulado[/yellow]"
                 progress.update(
                     task,
                     description=f"{action.resource_name}: {status}",
@@ -484,12 +519,20 @@ class Engine:
 
         console.print()
         if success:
-            console.print(
-                Panel(
-                    "[green]✓ Todas as mudanças aplicadas com sucesso![/green]",
-                    border_style="green",
+            if dry_run:
+                console.print(
+                    Panel(
+                        "[yellow]✓ Simulação concluída com sucesso (Dry Run).[/yellow]",
+                        border_style="yellow",
+                    )
                 )
-            )
+            else:
+                console.print(
+                    Panel(
+                        "[green]✓ Todas as mudanças aplicadas com sucesso![/green]",
+                        border_style="green",
+                    )
+                )
         else:
             console.print(
                 Panel(
@@ -501,7 +544,7 @@ class Engine:
 
         return success
 
-    def destroy(self, auto_approve: bool = False) -> bool:
+    def destroy(self, auto_approve: bool = False, dry_run: bool = False) -> bool:
         """Destrói toda a infraestrutura."""
         self.state.load()
 
@@ -510,18 +553,25 @@ class Engine:
             console.print("[green]✓ Nenhum recurso ativo para destruir.[/green]")
             return True
 
+        if dry_run:
+            title_msg = f"[yellow bold]⚠ SIMULAÇÃO: {len(active)} recurso(s) seriam destruídos![/yellow bold]"
+            border = "yellow"
+        else:
+            title_msg = f"[red bold]⚠ ATENÇÃO: {len(active)} recurso(s) serão destruídos![/red bold]"
+            border = "red"
+
         console.print(
             Panel(
-                f"[red bold]⚠ ATENÇÃO: {len(active)} recurso(s) serão destruídos![/red bold]",
+                title_msg,
                 title="☁️  CloudForge Destroy",
-                border_style="red",
+                border_style=border,
             )
         )
 
         for res in active:
             console.print(f"  [red]- {res.resource_type}: {res.name}[/red]")
 
-        if not auto_approve:
+        if not auto_approve and not dry_run:
             console.print()
             response = console.input(
                 "[bold red]Confirma a destruição? "
@@ -531,24 +581,21 @@ class Engine:
                 console.print("[yellow]Destruição cancelada.[/yellow]")
                 return False
 
-        # Inicializar provider principal
-        provider_config = self.config.load()
-        prov = self.config.provider
-        self.provider = get_provider(
-            prov["name"], prov["region"], prov.get("credentials")
-        )
-        self.provider.authenticate()
-
-        # Inicializar providers externos
-        for ext_name, ext_creds in self.config.external_cloudforge.providers.items():
-            try:
-                ext_provider = get_provider(ext_name, "global", ext_creds)
-                ext_provider.authenticate()
-                self._external_providers[ext_name] = ext_provider
-            except Exception as e:
-                console.print(
-                    f"[yellow]⚠ Provider externo '{ext_name}': {e}[/yellow]"
-                )
+        if not dry_run:
+            # Inicializar todos os providers
+            for p_alias, p_config in self.config.providers.items():
+                try:
+                    prov_instance = get_provider(
+                        p_config["name"],
+                        p_config["region"],
+                        p_config.get("credentials"),
+                    )
+                    prov_instance.authenticate()
+                    self._providers[p_alias] = prov_instance
+                except Exception as e:
+                    console.print(f"[yellow]⚠ Erro ao carregar provider '{p_alias}': {e}[/yellow]")
+        else:
+            console.print("\n[yellow][DRY RUN] Simulando destruição...[/yellow]")
 
         # Destruir em ordem reversa topológica
         graph = DependencyGraph.from_resources(self.config.resources)
@@ -564,21 +611,26 @@ class Engine:
                 f"  [red]Destruindo {res_state.resource_type} '{name}'...[/red]"
             )
 
-            provider = self._get_provider_for_resource(res_state.resource_type)
-            result = provider.delete_resource(
-                res_state.resource_type, res_state.provider_id or name
-            )
-
-            if result.success:
+            if dry_run:
+                console.print(f"  [yellow][DRY RUN] Destruiria {res_state.resource_type} '{name}'[/yellow]")
                 res_state.status = "destroyed"
-                self.state.set_resource(res_state)
-                console.print(f"  [green]✓ '{name}' destruído[/green]")
+                console.print(f"  [green]✓ '{name}' simulado[/green]")
             else:
-                console.print(f"  [red]✗ Falha ao destruir '{name}': {result.error}[/red]")
-                success = False
+                provider = self._get_provider_for_resource(res_state.resource_type)
+                result = provider.delete_resource(
+                    res_state.resource_type, res_state.provider_id or name
+                )
 
-        # Limpar estado se tudo foi destruído
-        if success:
+                if result.success:
+                    res_state.status = "destroyed"
+                    self.state.set_resource(res_state)
+                    console.print(f"  [green]✓ '{name}' destruído[/green]")
+                else:
+                    console.print(f"  [red]✗ Falha ao destruir '{name}': {result.error}[/red]")
+                    success = False
+
+        # Limpar estado se tudo foi destruído e não for dry run
+        if success and not dry_run:
             self.state.clear()
 
         self.state.save()
@@ -586,14 +638,24 @@ class Engine:
 
     # ── Helpers internos ──────────────────────────────────────────
 
-    def _get_provider_for_resource(self, resource_type: str) -> BaseProvider:
-        """Retorna o provider correto para um tipo de recurso."""
-        # Verificar se o recurso tem provider externo mapeado
+    def _get_provider_for_resource(self, resource_type: str, resource_name: str | None = None) -> BaseProvider:
+        """Retorna o provider correto para um tipo de recurso ou instância de recurso."""
+        # Se houver um recurso específico, verificar se ele tem um provider definido
+        if resource_name:
+            # Procurar o recurso na config para ver se ele tem um provider associado
+            for res_data in self.config.resources:
+                if res_data["name"] == resource_name:
+                    p_alias = res_data.get("provider", "default")
+                    if p_alias in self._providers:
+                        return self._providers[p_alias]
+        
+        # Fallback 1: Verificar se o tipo de recurso tem provider global mapeado (ex: DNS -> GoDaddy)
         ext_name = RESOURCE_PROVIDER_MAP.get(resource_type)
-        if ext_name and ext_name in self._external_providers:
-            return self._external_providers[ext_name]
-        # Caso contrário, usar o provider principal
-        return self.provider
+        if ext_name and ext_name in self._providers:
+            return self._providers[ext_name]
+            
+        # Fallback 2: Usar o provider default
+        return self._providers.get("default")
 
     def _apply_create(self, action) -> ResourceResult:
         """Aplica criação de um recurso."""
@@ -605,7 +667,7 @@ class Engine:
             )
 
         # Resolver provider correto para este recurso
-        provider = self._get_provider_for_resource(action.resource_type)
+        provider = self._get_provider_for_resource(action.resource_type, action.resource_name)
 
         resource = res_class(
             name=action.resource_name,
@@ -639,7 +701,7 @@ class Engine:
 
     def _apply_update(self, action) -> ResourceResult:
         """Aplica atualização de um recurso."""
-        provider = self._get_provider_for_resource(action.resource_type)
+        provider = self._get_provider_for_resource(action.resource_type, action.resource_name)
         return provider.update_resource(
             action.resource_type,
             action.resource_name,
@@ -649,7 +711,7 @@ class Engine:
 
     def _apply_delete(self, action) -> ResourceResult:
         """Aplica deleção de um recurso."""
-        provider = self._get_provider_for_resource(action.resource_type)
+        provider = self._get_provider_for_resource(action.resource_type, action.resource_name)
         res_state = self.state.get_resource(action.resource_name)
         provider_id = res_state.provider_id if res_state else action.resource_name
 

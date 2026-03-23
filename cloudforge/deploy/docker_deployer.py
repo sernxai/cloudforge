@@ -254,11 +254,11 @@ class DockerDeployer:
             resources_spec = f"""
           resources:
             requests:
-              cpu: "{self.cloudforge.resources.get('cpu_request', '100m')}"
-              memory: "{self.cloudforge.resources.get('memory_request', '128Mi')}"
+              cpu: "{self.resources.get('cpu_request', '100m')}"
+              memory: "{self.resources.get('memory_request', '128Mi')}"
             limits:
-              cpu: "{self.cloudforge.resources.get('cpu_limit', '500m')}"
-              memory: "{self.cloudforge.resources.get('memory_limit', '512Mi')}" """
+              cpu: "{self.resources.get('cpu_limit', '500m')}"
+              memory: "{self.resources.get('memory_limit', '512Mi')}" """
 
         return f"""apiVersion: apps/v1
 kind: Deployment

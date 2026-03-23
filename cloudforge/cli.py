@@ -449,13 +449,17 @@ def validate(config: str):
     default=".cloudforge/state.json",
     help="Caminho do arquivo de estado",
 )
-def plan(config: str, state: str):
+@click.option(
+    "--workspace", "-w",
+    help="Nome do workspace",
+)
+def plan(config: str, state: str, workspace: str | None = None):
     """Gera plano de execução (dry-run)."""
     console.print(BANNER)
 
     from cloudforge.core.engine import Engine
 
-    engine = Engine(config_path=config, state_path=state)
+    engine = Engine(config_path=config, state_path=state, workspace=workspace)
     engine.plan()
 
 
@@ -471,19 +475,29 @@ def plan(config: str, state: str):
     help="Caminho do arquivo de estado",
 )
 @click.option(
+    "--workspace", "-w",
+    help="Nome do workspace",
+)
+@click.option(
     "--auto-approve",
     is_flag=True,
     default=False,
     help="Pular confirmação interativa",
 )
-def apply(config: str, state: str, auto_approve: bool):
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Simular execução sem aplicar mudanças reais",
+)
+def apply(config: str, state: str, workspace: str | None, auto_approve: bool, dry_run: bool):
     """Aplica a infraestrutura definida."""
     console.print(BANNER)
 
     from cloudforge.core.engine import Engine
 
-    engine = Engine(config_path=config, state_path=state)
-    success = engine.apply(auto_approve=auto_approve)
+    engine = Engine(config_path=config, state_path=state, workspace=workspace)
+    success = engine.apply(auto_approve=auto_approve, dry_run=dry_run)
     sys.exit(0 if success else 1)
 
 
@@ -499,19 +513,29 @@ def apply(config: str, state: str, auto_approve: bool):
     help="Caminho do arquivo de estado",
 )
 @click.option(
+    "--workspace", "-w",
+    help="Nome do workspace",
+)
+@click.option(
     "--auto-approve",
     is_flag=True,
     default=False,
     help="Pular confirmação interativa",
 )
-def destroy(config: str, state: str, auto_approve: bool):
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Simular destruição sem remover recursos reais",
+)
+def destroy(config: str, state: str, workspace: str | None, auto_approve: bool, dry_run: bool):
     """Destrói toda a infraestrutura provisionada."""
     console.print(BANNER)
 
     from cloudforge.core.engine import Engine
 
-    engine = Engine(config_path=config, state_path=state)
-    success = engine.destroy(auto_approve=auto_approve)
+    engine = Engine(config_path=config, state_path=state, workspace=workspace)
+    success = engine.destroy(auto_approve=auto_approve, dry_run=dry_run)
     sys.exit(0 if success else 1)
 
 
@@ -573,13 +597,17 @@ def deploy(image: str, target: str, replicas: int, port: int, config: str):
     default=".cloudforge/state.json",
     help="Caminho do arquivo de estado",
 )
-def status(state: str):
+@click.option(
+    "--workspace", "-w",
+    help="Nome do workspace",
+)
+def status(state: str, workspace: str | None = None):
     """Exibe o estado atual da infraestrutura."""
     from cloudforge.core.state import StateManager
     from rich.table import Table
     from rich import box
 
-    sm = StateManager(state)
+    sm = StateManager(state, workspace=workspace)
     sm.load()
 
     resources = sm.list_resources()
@@ -629,13 +657,17 @@ def status(state: str):
     default=".cloudforge/state.json",
     help="Caminho do arquivo de estado",
 )
+@click.option(
+    "--workspace", "-w",
+    help="Nome do workspace",
+)
 @click.argument("resource_name")
-def output(state: str, resource_name: str):
+def output(state: str, workspace: str | None, resource_name: str):
     """Exibe outputs de um recurso específico."""
     from cloudforge.core.state import StateManager
     import json
 
-    sm = StateManager(state)
+    sm = StateManager(state, workspace=workspace)
     sm.load()
 
     res = sm.get_resource(resource_name)
@@ -646,10 +678,107 @@ def output(state: str, resource_name: str):
     console.print(
         Panel(
             json.dumps(res.outputs, indent=2, ensure_ascii=False),
-            title=f"Outputs: {resource_name}",
+            title=f"Outputs: {resource_name} (Workspace: {workspace or 'default'})",
             border_style="cyan",
         )
     )
+
+
+@cli.command()
+@click.argument("provider", required=False)
+def configure(provider: str | None):
+    """Configura credenciais/API Keys de forma guiada.
+    
+    Este comando ajuda você a obter e configurar as chaves necessárias
+    para cada provider, armazenando-as de forma cifrada localmente.
+    """
+    from cloudforge.core.auth import GuidedSetup
+    
+    setup = GuidedSetup()
+    setup.run(provider)
+
+
+@cli.command(name="set")
+@click.argument("path")
+@click.argument("value")
+@click.option(
+    "--config", "-c",
+    default="infrastructure.yaml",
+    help="Caminho do arquivo de configuração",
+)
+def set_config(path: str, value: str, config: str):
+    """Define um valor no arquivo de configuração YAML.
+
+    Exemplo: cloudforge set project.name meu-app
+    """
+    from cloudforge.core.config import Config
+    
+    try:
+        cfg = Config(config_path=config)
+        cfg.set(path, value)
+        cfg.save()
+        console.print(f"[green]✓ Configuração [bold]{path}[/bold] atualizada para [bold]{value}[/bold][/green]")
+    except Exception as e:
+        console.print(f"[red]✗ Erro ao atualizar configuração: {e}[/red]")
+        sys.exit(1)
+
+
+@cli.group()
+def workspace():
+    """Gerencia espaços de trabalho (workspaces) isolados."""
+    pass
+
+
+@workspace.command(name="list")
+def workspace_list():
+    """Lista todos os workspaces existentes."""
+    ws_dir = Path(".cloudforge") / "workspaces"
+    if not ws_dir.exists():
+        console.print("[dim]Nenhum workspace criado. Usando default.[/dim]")
+        return
+
+    table = Table(title="📦 CloudForge Workspaces", box=box.ROUNDED)
+    table.add_column("Workspace", style="bold green")
+    table.add_column("Status")
+
+    for ws in ws_dir.iterdir():
+        if ws.is_dir():
+            table.add_row(ws.name, "Disponível")
+    
+    console.print(table)
+
+
+@workspace.command(name="new")
+@click.argument("name")
+def workspace_new(name: str):
+    """Cria um novo workspace."""
+    ws_dir = Path(".cloudforge") / "workspaces" / name
+    if ws_dir.exists():
+        console.print(f"[red]✗ Workspace '{name}' já existe.[/red]")
+        return
+    
+    ws_dir.mkdir(parents=True, exist_ok=True)
+    console.print(f"[green]✓ Workspace '{name}' criado com sucesso![/green]")
+    console.print(f"[dim]Use: cloudforge apply --workspace {name}[/dim]")
+
+
+@workspace.command(name="delete")
+@click.argument("name")
+@click.option("--force", is_flag=True, help="Deleta sem confirmar")
+def workspace_delete(name: str, force: bool):
+    """Deleta um workspace e seu estado."""
+    ws_dir = Path(".cloudforge") / "workspaces" / name
+    if not ws_dir.exists():
+        console.print(f"[red]✗ Workspace '{name}' não encontrado.[/red]")
+        return
+    
+    if not force:
+        if not click.confirm(f"Tem certeza que deseja deletar o workspace '{name}'? Isso apagará o arquivo de estado!"):
+            return
+
+    import shutil
+    shutil.rmtree(ws_dir)
+    console.print(f"[green]✓ Workspace '{name}' removido.[/green]")
 
 
 if __name__ == "__main__":

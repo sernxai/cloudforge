@@ -82,8 +82,14 @@ class StateManager:
 
     STATE_VERSION = "1.0"
 
-    def __init__(self, state_path: str = ".cloudforge/state.json"):
-        self.state_path = Path(state_path)
+    def __init__(self, state_path: str = ".cloudforge/state.json", workspace: str | None = None):
+        if workspace:
+            # Caminho para o workspace: .cloudforge/workspaces/<name>/state.json
+            self.state_path = Path(".cloudforge") / "workspaces" / workspace / "state.json"
+        else:
+            self.state_path = Path(state_path)
+            
+        self.workspace = workspace
         self._resources: dict[str, ResourceState] = {}
         self._metadata: dict[str, Any] = {}
 
@@ -92,6 +98,7 @@ class StateManager:
         if not self.state_path.exists():
             self._metadata = {
                 "version": self.STATE_VERSION,
+                "workspace": self.workspace,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
             return
@@ -120,7 +127,7 @@ class StateManager:
         data = {
             "metadata": self._metadata,
             "resources": {
-                name: rs.to_dict() for name, rs in self._cloudforge.resources.items()
+                name: rs.to_dict() for name, rs in self._resources.items()
             },
         }
 
@@ -129,7 +136,7 @@ class StateManager:
 
     def get_resource(self, name: str) -> ResourceState | None:
         """Retorna o estado de um recurso pelo nome."""
-        return self._cloudforge.resources.get(name)
+        return self._resources.get(name)
 
     def set_resource(self, resource: ResourceState) -> None:
         """Define/atualiza o estado de um recurso."""
@@ -138,11 +145,11 @@ class StateManager:
 
     def remove_resource(self, name: str) -> None:
         """Remove um recurso do estado."""
-        self._cloudforge.resources.pop(name, None)
+        self._resources.pop(name, None)
 
     def list_resources(self) -> list[ResourceState]:
         """Lista todos os recursos no estado."""
-        return list(self._cloudforge.resources.values())
+        return list(self._resources.values())
 
     def has_resource(self, name: str) -> bool:
         """Verifica se um recurso existe no estado."""
@@ -150,7 +157,7 @@ class StateManager:
 
     def get_active_resources(self) -> list[ResourceState]:
         """Retorna apenas recursos ativos."""
-        return [r for r in self._cloudforge.resources.values() if r.status == "active"]
+        return [r for r in self._resources.values() if r.status == "active"]
 
     def diff(self, desired_resources: list[dict]) -> dict[str, list]:
         """
@@ -165,7 +172,7 @@ class StateManager:
             }
         """
         desired_map = {r["name"]: r for r in desired_resources}
-        current_names = set(self._cloudforge.resources.keys())
+        current_names = set(self._resources.keys())
         desired_names = set(desired_map.keys())
 
         result = {
@@ -207,4 +214,4 @@ class StateManager:
 
     def clear(self) -> None:
         """Limpa todo o estado."""
-        self._cloudforge.resources.clear()
+        self._resources.clear()

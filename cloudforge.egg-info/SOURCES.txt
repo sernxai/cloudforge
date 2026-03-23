@@ -10,6 +10,7 @@ cloudforge.egg-info/entry_points.txt
 cloudforge.egg-info/requires.txt
 cloudforge.egg-info/top_level.txt
 cloudforge/core/__init__.py
+cloudforge/core/auth.py
 cloudforge/core/config.py
 cloudforge/core/engine.py
 cloudforge/core/graph.py

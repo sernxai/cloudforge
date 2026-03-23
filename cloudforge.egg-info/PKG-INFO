@@ -108,6 +108,10 @@ Dynamic: summary
 - **Plan/Apply/Destroy**: Secure workflow with preview before applying
 - **Advanced Logging**: Structured logging with Rich
 - **Retry Logic**: Automatic retry with exponential backoff for transient errors
+- **Workspaces**: Isolate infrastructure states (e.g., dev, prod, or separate apps in a monorepo)
+- **Guided Setup**: Interactive CLI assistant to help you obtain and configure API Keys
+- **Encrypted Vault**: Secure local storage for your credentials, encrypted at rest
+- **Cross-Workspace References**: Link resources from different workspaces (e.g., your Dashboard app reading from your Database app)
 
 ## Supported Resources
 
@@ -201,6 +205,73 @@ cloudforge apply
 cloudforge status
 cloudforge output api-backend
 cloudforge destroy
+```
+
+## Guided Credentials Setup
+
+CloudForge provides an interactive way to configure your credentials without manually setting up environment variables.
+
+```bash
+# Start the guided setup
+cloudforge configure
+
+# Or for a specific provider
+cloudforge configure aws
+```
+The system will provide step-by-step instructions (URLs, menu options) and save your keys securely in an **Encrypted Vault** (`.cloudforge/credentials.enc`).
+
+## Workspaces (State Isolation)
+
+Workspaces allow you to manage multiple separate infrastructure states within the same project. Essential for **Monorepos (like Turborepo)** or environment separation.
+
+```bash
+# Management
+cloudforge workspace list        # List all workspaces
+cloudforge workspace new prod    # Create 'prod' workspace
+cloudforge workspace delete dev  # Remove 'dev' workspace
+
+# Usage
+cloudforge apply --workspace prod
+cloudforge status --workspace prod
+```
+
+## Multi-Provider Support
+
+You can define multiple providers (different regions or clouds) in a single configuration file.
+
+```yaml
+providers:
+  aws_sp:
+    name: aws
+    region: sa-east-1
+  aws_va:
+    name: aws
+    region: us-east-1
+
+resources:
+  - name: backend-vpc
+    type: vpc
+    provider: aws_sp   # Uses São Paulo
+    config: { cidr_block: "10.0.0.0/16" }
+
+  - name: frontend-vpc
+    type: vpc
+    provider: aws_va   # Uses North Virginia
+    config: { cidr_block: "192.168.0.0/16" }
+```
+
+## Cross-Workspace References
+
+Connect different parts of your infrastructure even if they are in different workspaces.
+
+```yaml
+# In your dashboard-app infrastructure
+resources:
+  - name: dashboard-vm
+    type: vm
+    config:
+      # Reference an output from the 'backend' workspace
+      vpc_id: "${workspace.backend.main-vpc.id}"
 ```
 
 ## Guide: GCP + Firebase + DNS (GoDaddy/Cloudflare)

@@ -75,7 +75,26 @@ class BaseResource(ABC):
                 if isinstance(value, str) and value.startswith("${"):
                     ref = value[2:-1]  # Remove ${ e }
                     parts = ref.split(".")
-                    if len(parts) == 2:
+                    
+                    # 1. Referência a outro Workspace: ${workspace.ws_name.res_name.output}
+                    if parts[0] == "workspace" and len(parts) >= 4:
+                        from cloudforge.core.state import StateManager
+                        ws_name = parts[1]
+                        res_name = parts[2]
+                        output_key = parts[3]
+                        
+                        try:
+                            ws_state = StateManager(workspace=ws_name)
+                            ws_state.load()
+                            res_state = ws_state.get_resource(res_name)
+                            if res_state and output_key in res_state.outputs:
+                                resolved[key] = res_state.outputs[output_key]
+                        except Exception:
+                            # Se falhar ao carregar workspace, mantém o valor original
+                            pass
+                            
+                    # 2. Referência local: ${res_name.output}
+                    elif len(parts) == 2:
                         res_name, output_key = parts
                         if res_name in context:
                             resolved[key] = context[res_name].get(
